@@ -6,12 +6,14 @@ name: Verify Godot project
 on:
   push:
     branches:
-      - 'phase-*'
+      # `**` is required here: `*` does not match `/`, so a single `*` would
+      # miss branches such as phase-2/automated-testing entirely.
+      - 'phase-**'
       - 'feature/**'
   pull_request:
     branches:
       - main
-      - 'phase-*'
+      - 'phase-**'
   workflow_dispatch:
 
 permissions:
