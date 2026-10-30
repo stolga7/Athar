@@ -77,11 +77,22 @@ These are known and intentionally **not** changed in this baseline phase:
 - No `export_presets.cfg` and no Android build template, so the project cannot
   be exported to an APK as-is. Signing credentials are not part of this repo.
 - No save system, settings, pause menu or localized strings.
-- World layout uses an unseeded random generator, so each run differs.
+- World layout uses a random generator; pass `--seed=<int>` (or set `ATHAR_SEED`)
+  to reproduce a layout, otherwise each run differs. See `TESTING.md`.
 - The deer is faster than the hunter, which makes the final capture step hard to
   reach — gameplay balance is a design decision pending owner review.
 - Gameplay behaviour, balance and art direction are unchanged from the original
   uploaded archive.
+
+## Verification
+
+```bash
+./scripts/verify_project.sh
+```
+
+Runs the headless checks — engine version, project import, GDScript parsing,
+startup, repository integrity and seed determinism — and exits non-zero if any
+of them fail. Full details in [TESTING.md](TESTING.md).
 
 ## License
 

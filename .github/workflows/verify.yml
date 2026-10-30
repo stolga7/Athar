@@ -1,0 +1,42 @@
+name: Verify Godot project
+
+# Runs scripts/verify_project.sh on the free GitHub-hosted runner.
+# No secrets, tokens or credentials are used, and nothing is deployed.
+
+on:
+  push:
+    branches:
+      - 'phase-*'
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - 'phase-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (Godot 4.7.2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Godot 4.7.2 stable
+        run: |
+          set -euo pipefail
+          url="https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip"
+          curl -fsSL -o /tmp/godot.zip "$url"
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          mv /tmp/godot/Godot_v4.7.2-stable_linux.x86_64 /tmp/godot/godot
+          chmod +x /tmp/godot/godot
+          /tmp/godot/godot --version
+
+      - name: Verify project
+        env:
+          GODOT: /tmp/godot/godot
+        run: ./scripts/verify_project.sh --verbose

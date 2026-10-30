@@ -13,7 +13,14 @@ var deer_state := "Grazing"
 var stamina := 100.0
 var hunt_button: Button
 
+# Automated testing hook: pass `--seed=<int>` as a user argument (after `--`),
+# or export ATHAR_SEED, to force one reproducible world layout. Without either,
+# the engine's normal random seed applies and gameplay is unchanged.
+const TEST_SEED_ARG := "--seed="
+var test_seed_active := false
+
 func _ready() -> void:
+	_apply_test_seed()
 	_setup_input()
 	_build_environment()
 	_build_world()
@@ -22,6 +29,10 @@ func _ready() -> void:
 	_build_camera()
 	_build_hud()
 	_update_status("Find the deer. Move quietly through the forest.")
+	# Printed when a test seed is active, or in headless runs, so the automated
+	# tests can compare layouts. Desktop play stays silent.
+	if test_seed_active or DisplayServer.get_name() == "headless":
+		print("ATHAR_TEST_WORLD_CHECKSUM=", _world_checksum())
 
 func _setup_input() -> void:
 	for action in ["move_forward", "move_back", "move_left", "move_right"]:
@@ -328,3 +339,31 @@ func _on_hunt_pressed() -> void:
 func _update_status(message: String) -> void:
 	if status_label:
 		status_label.text = message
+
+# Seeds the global RNG only when a test seed was supplied. See TESTING.md.
+func _apply_test_seed() -> void:
+	var value = _read_test_seed()
+	if value == null:
+		return
+	seed(value)
+	test_seed_active = true
+	print("ATHAR_TEST_SEED=", value)
+
+func _read_test_seed():
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with(TEST_SEED_ARG):
+			var raw := arg.substr(TEST_SEED_ARG.length()).strip_edges()
+			if raw.is_valid_int():
+				return int(raw)
+	var from_env := OS.get_environment("ATHAR_SEED").strip_edges()
+	if from_env.is_valid_int():
+		return int(from_env)
+	return null
+
+# Stable fingerprint of the generated world, used to prove a seed reproduces it.
+func _world_checksum() -> String:
+	var parts := PackedStringArray()
+	for child in get_children():
+		if child is MeshInstance3D:
+			parts.append("%.4f,%.4f,%.4f" % [child.position.x, child.position.y, child.position.z])
+	return ",".join(parts).sha256_text()
