@@ -1,0 +1,33 @@
+# Normalize EOL for all files that Git considers text files.
+* text=auto eol=lf
+
+# Godot text formats — always LF, always diffable
+*.gd      text eol=lf
+*.tscn    text eol=lf
+*.tres    text eol=lf
+*.godot   text eol=lf
+*.import  text eol=lf
+*.cfg     text eol=lf
+*.shader  text eol=lf
+*.gltf    text eol=lf
+
+# Binary formats — never converted, never diffed as text
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.webp    binary
+*.exr     binary
+*.hdr     binary
+*.ctex    binary
+*.glb     binary
+*.ogg     binary
+*.wav     binary
+*.mp3     binary
+*.ttf     binary
+*.otf     binary
+*.woff    binary
+*.woff2   binary
+*.pck     binary
+*.apk     binary
+*.aab     binary
+*.zip     binary
