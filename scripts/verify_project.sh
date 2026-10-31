@@ -185,7 +185,7 @@ fi
 
 # ----------------------------------------------------- E. repository integrity
 section "E. Repository integrity"
-for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
+for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tools/capture_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
 	if [ -e "$ROOT/$required" ]; then
 		pass "$required present"
 	else
@@ -312,6 +312,46 @@ if printf '%s' "$HUNT_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; t
 else
 	fail "hunting checks failed: ${HUNT_RESULT:-no summary}"
 	grep -a '^  FAIL' "$HUNT_LOG" | sed 's/^/          /' | head -n 12
+fi
+
+# -------------------------------------------------- H. camera and visuals ---
+section "H. Camera and visual tests"
+VISUAL_LOG="$LOG_DIR/visual-tests.log"
+godot_run --headless --path "$ROOT" res://scenes/tests/visual_tests.tscn >"$VISUAL_LOG" 2>&1
+VISUAL_STATUS=$?
+project_errors "$VISUAL_LOG" >"$LOG_DIR/visual.errors"
+if [ "$VISUAL_STATUS" -eq 0 ]; then
+	pass "visual tests exited 0"
+elif [ "$VISUAL_STATUS" -eq 124 ]; then
+	fail "visual tests timed out after ${GODOT_TIMEOUT}s (the suite never exited)"
+	grep -a '^  '"$VISUAL_LOG" | sed 's/^/          /' | tail -n 8
+else
+	fail "visual tests exited $VISUAL_STATUS"
+fi
+if [ -s "$LOG_DIR/visual.errors" ]; then
+	fail "visual tests reported project errors"
+	show "$LOG_DIR/visual.errors"
+else
+	info "no project errors during visual tests"
+fi
+VISUAL_RESULT="$(grep -a '^RESULT:' "$VISUAL_LOG" | tail -n 1)"
+if [ -n "$VISUAL_RESULT" ]; then
+	info "$VISUAL_RESULT"
+else
+	fail "visual tests did not print a result summary"
+	show "$VISUAL_LOG" 30
+fi
+VISUAL_CHECKS="$(printf '%s' "$VISUAL_RESULT" | sed -n 's/^RESULT: \([0-9][0-9]*\) checks,.*/\1/p')"
+if [ -n "$VISUAL_CHECKS" ] && [ "$VISUAL_CHECKS" -ge 45 ]; then
+	pass "all $VISUAL_CHECKS camera and visual checks reported"
+else
+	fail "visual suite is incomplete (${VISUAL_CHECKS:-0} checks reported, expected at least 45)"
+fi
+if printf '%s' "$VISUAL_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; then
+	pass "every camera and visual check passed"
+else
+	fail "visual checks failed: ${VISUAL_RESULT:-no summary}"
+	grep -a '^  FAIL' "$VISUAL_LOG" | sed 's/^/          /' | head -n 12
 fi
 
 # ----------------------------------------------------------------- summary ---

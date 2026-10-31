@@ -54,13 +54,22 @@ control scheme and press the same actions directly.
 project.godot                Project settings (name, main scene, display, input, renderer)
 scenes/main.tscn             Game scene: a Node3D root with main.gd attached
 scenes/tests/                Test scenes (headless, not part of normal gameplay)
-scripts/main.gd              World generation, hunter control, camera, HUD, wiring
+scenes/tools/                Development tools (screenshot capture, not shipped)
+scripts/main.gd              World assembly, hunter control, HUD, wiring
+docs/screenshots/            Rendered evidence from the visual phase
 scripts/visuals/rig_utils.gd Mesh and material helpers shared by both rigs
 scripts/visuals/hunter_rig.gd  Hunter model and its idle/walk/run animation
 scripts/visuals/deer_rig.gd    Deer model, state poses and gait animation
+scripts/visuals/camera_rig.gd  Follow camera: smoothing, shoulder offset, obstruction
+scripts/visuals/forest.gd      Procedural tree variants, instanced placement, trunk colliders
+scripts/visuals/wilds_ground.gd  Ground material, backdrop, stones
+scripts/visuals/wilds_environment.gd  Sky, fog, sun and fill light
+scripts/ui/deer_marker.gd    Off-screen / distant deer cue
 scripts/animals/deer_ai.gd   Deer behaviour: states, detection, flight, stamina
 scripts/gameplay/hunt_session.gd  One hunt: capture rule, counts, new-hunt cycle
 scripts/tests/hunting_tests.gd    Headless hunting and rig test suite
+scripts/tests/visual_tests.gd     Headless camera, forest and lighting test suite
+scripts/tools/capture_shots.gd    Renders review screenshots from the real scene
 scripts/verify_project.sh    Automated verification (see TESTING.md)
 assets/                      Reserved for imported assets — currently empty
 icon.svg                     Project icon
@@ -69,9 +78,19 @@ README_AR.md                 Arabic project notes
 
 ## What this prototype contains
 
-- Procedural environment: sky, sun with shadows, fog, ground plane.
-- Procedural world: trees, rocks and a ruined stone arch.
-- A hunter character with third-person follow camera and gravity.
+- A third-person camera built for a phone screen: 6 m back and 2.8 m up, a
+  shoulder offset so the hunter never covers the middle of the frame, smoothed
+  follow, and a swept-sphere obstruction probe that pulls the camera in front of
+  trunks and terrain instead of letting foliage fill the screen.
+- Procedural forest with eight tree shapes — tapered trunks with root flare and
+  branches, irregular broadleaf crowns and stacked conifer tiers — instanced as
+  a handful of MultiMesh batches, with a distant treeline for the horizon.
+- Dusk lighting: warm low sun with soft, lifted shadows, cool fill light, depth
+  fog, filmic tonemapping and a textured ground (moss/soil albedo plus a detail
+  normal map) instead of one flat green plane.
+- An off-screen/distant deer cue in the HUD corner: a gold chevron when the deer
+  is behind the camera, a small diamond with the range when it is far away.
+- A hunter character with gravity and the camera rig above.
 - A hooded hunter built from articulated parts: hood, cloak, belt with a cyan
   gem, boots, quiver and a wooden bow, in a dark/purple/gold palette with one
   restrained cyan accent. Legs and arms swing in a procedural idle/walk cycle.
@@ -89,7 +108,8 @@ README_AR.md                 Arabic project notes
 
 These are known and intentionally **not** changed in this baseline phase:
 
-- All visuals are Godot primitives, not final art. `assets/` is empty.
+- All visuals are Godot primitives, not final art. `assets/` is empty: trees,
+  ground and lighting are generated in code with no textures or models on disk.
 - One scene and one script; no separate actor/UI scenes, no autoloads, no audio.
 - HUD text is English only; no Arabic font or right-to-left layout yet.
 - No `export_presets.cfg` and no Android build template, so the project cannot
@@ -98,12 +118,15 @@ These are known and intentionally **not** changed in this baseline phase:
 - World layout uses a random generator; pass `--seed=<int>` (or set `ATHAR_SEED`)
   to reproduce a layout, otherwise each run differs. See `TESTING.md`.
 - The hunter and deer are assembled from primitives by code. Their proportions
-  are asserted numerically by the test suite (height, length, width, feet on the
-  ground), but **no automated check can confirm they look good**: this project's
-  automated runs use Godot's headless dummy renderer, so all visual judgement
-  still needs a human on a real machine.
-- No Android device or emulator test has been run, so touch feel, framerate and
-  on-device rendering of the new models are unverified.
+  are asserted numerically by the test suite, and the environment is checked by
+  the visual test suite, but **neither can confirm a scene looks good**.
+  Screenshots in `docs/screenshots/phase-3.1/` were rendered from the real scene
+  with software Vulkan (Mesa lavapipe) on a Linux VM; they are evidence of what
+  the code draws, not a substitute for playing it.
+- No Android device or emulator test has been run. Touch feel, on-device
+  framerate and colour reproduction on a phone screen are unverified, and the
+  draw-call/triangle counts in `TESTING.md` come from a software rasteriser, so
+  they indicate scene cost but are not a phone benchmark.
 
 ## Verification
 
@@ -112,9 +135,16 @@ These are known and intentionally **not** changed in this baseline phase:
 ```
 
 Runs the headless checks — engine version, project import, GDScript parsing,
-startup, repository integrity, seed determinism and the hunting suite — and
-exits non-zero if any of them fail. The hunting suite alone runs 66 checks; the
-script reports 37 of its own. Full details in [TESTING.md](TESTING.md).
+startup, repository integrity, seed determinism, the hunting suite and the
+camera/visual suite — and exits non-zero if any of them fail. The hunting suite
+runs 66 checks and the visual suite 53; the script itself reports 56 checks,
+including both suites' verdicts. Full details in [TESTING.md](TESTING.md).
+
+Rendered screenshots (spawn view, deer at close range, chase, camera pinned
+against a trunk, horizon) are in
+[docs/screenshots/phase-3.1](docs/screenshots/phase-3.1/). They can be
+regenerated with `scripts/tools/capture_shots.gd` on any machine with a display;
+see section 7 of [TESTING.md](TESTING.md).
 
 ## License
 

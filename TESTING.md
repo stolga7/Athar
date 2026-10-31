@@ -221,6 +221,64 @@ Exact hunting values, all named constants:
 | `CAPTURE_DISTANCE` | 1.8 m | `hunt_session.gd` |
 | `NEW_HUNT_MIN_DISTANCE` / `_MAX_` | 16.0 m / 26.0 m | `main.gd` |
 
+### H. Camera and visual tests
+Runs `scenes/tests/visual_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/visual_tests.tscn
+```
+
+Same contract as G: exit code 0, no project errors, a `RESULT:` summary with at
+least 45 checks, and `0 failed`. It uses the real main scene and its real physics
+world, because the camera's obstruction probe is a physics query — a mock world
+would prove nothing.
+
+| Area | What is asserted | Measured in the last run |
+|---|---|---|
+| Framing | camera rig exists, is current, 60° field of view | 60 deg |
+| Distance | holds its configured follow distance | 6.00 m |
+| Position | sits 4–7.5 m behind and 1.6–3.4 m above the hunter | 5.85 m behind, 2.80 m up |
+| Readability | hunter occupies >20% of the frame height | 31% |
+| Shoulder | camera offset from the hunter's centre line | 0.62 m |
+| Obstruction | a layer-2 cylinder on the camera line pulls it in | 6.00 → 2.17 m |
+| Obstruction safety | never inside the obstacle, never below the ground floor | 0.78 m clear, y = 2.76 |
+| Recovery | returns to full distance after the obstacle is removed | 6.00 m |
+| Stability | no jitter while the hunter stands still | 0.000 m over 30 frames |
+| Smoothing | a 3 m jump moves the camera < 2 m in one frame | 0.42 m |
+| Canopy clearance | worst-case camera height stays below foliage | 2.88 m vs 3.60 m |
+| Forest size | full stand plus a distant treeline | 84 + 54 trees |
+| Instancing | many trees, few nodes | 17 nodes for 138 trees |
+| Variety | enough distinct tree shapes | 8 variants |
+| Spacing | trunks keep at least the configured gap | 3.53 m |
+| Clear areas | no tree in the clearing, spawn pocket or ruin | 4.5 m / 6.0 m clear |
+| Height range | trees vary in height | 6.9 – 13.4 m |
+| Collision | trunks answer layer 2 only, one collider each | 84 colliders |
+| Determinism | same seed reproduces the forest, a new seed changes it | identical / different |
+| Lighting | fog, tonemapping, ambient, soft lifted shadows, no second shadow map | density 0.0095, filmic, ambient 1.00, blur 1.6, opacity 0.78 |
+| Ground | textured albedo, normal map, matte, still collides | roughness 0.96 |
+| Deer cue | hides when close and in view, chevron when behind, diamond when far | 4 states |
+| Gameplay | hunter speed, walking through trunks, deer still flees, rigs in use | 4.40 m in 1 s, FLEEING |
+
+Camera and world constants, all named:
+
+| Constant | Value | File |
+|---|---|---|
+| `DISTANCE` / `PITCH_DEGREES` | 6.0 m / −14° | `camera_rig.gd` |
+| `FOCUS_HEIGHT` / `FIELD_OF_VIEW` | 1.35 m / 60° | `camera_rig.gd` |
+| `SHOULDER_OFFSET` | 0.62 m | `camera_rig.gd` |
+| `MIN_DISTANCE` / `CLOSE_RANGE` | 1.2 m / 3.4 m | `camera_rig.gd` |
+| `CLOSE_PITCH_LIFT` | 30° | `camera_rig.gd` |
+| `FOLLOW_RATE` / `YAW_RATE` / `PULL_OUT_RATE` | 9 / 5 / 3 per s | `camera_rig.gd` |
+| `PROBE_RADIUS` / `OBSTRUCTION_MASK` | 0.32 m / layers 1+2 | `camera_rig.gd` |
+| `TREE_COUNT` / `FAR_TREE_COUNT` | 84 / 54 | `forest.gd` |
+| `MIN_SPACING` / `INNER_RADIUS` / `OUTER_RADIUS` | 3.5 m / 14 m / 43 m | `forest.gd` |
+| `CANOPY_BOTTOM` / `COLLISION_LAYER` | 3.6 m / layer 2 | `forest.gd` |
+| `SUN_ENERGY` / `SUN_SHADOW_OPACITY` / `SUN_SHADOW_BLUR` | 1.55 / 0.78 / 1.6 | `wilds_environment.gd` |
+| `AMBIENT_ENERGY` / `FILL_ENERGY` | 1.00 / 0.30 | `wilds_environment.gd` |
+| `FOG_DENSITY` / `FOG_SKY_AFFECT` | 0.0095 / 0.85 | `wilds_environment.gd` |
+| `ALBEDO_TILE` / `NORMAL_TILE` | 26 / 58 | `wilds_ground.gd` |
+| `ON_SCREEN_DISTANCE` / `EDGE_MARGIN` | 15 m / 76 px | `deer_marker.gd` |
+
 ---
 
 ## 4. Reading the result
@@ -230,12 +288,13 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  37 checks, 0 failed
+  56 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Check G's own output is one line here; the 66 hunting checks it gates are
-listed in full in `hunting-tests.log` and summarised as `RESULT: 66 checks, 0 failed`.
+Checks G and H are one line each here; the 66 hunting checks and the 53 camera
+and visual checks they gate are listed in full in `hunting-tests.log` and
+`visual-tests.log`, and summarised as `RESULT: <n> checks, 0 failed`.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -255,6 +314,8 @@ Useful log files:
 | `seed_*.log`, `rand_*.log` | the five world-generation runs |
 | `hunting-tests.log` | the full hunting suite output |
 | `hunting.errors` | project errors found in the hunting run, after filtering |
+| `visual-tests.log` | the full camera/visual suite output |
+| `visual.errors` | project errors found in the visual run, after filtering |
 
 Intended workflow on failure:
 
@@ -274,10 +335,15 @@ random numbers before or between the seeded steps.
 
 These are honest gaps. None of them makes the automated run green by default.
 
-- **No visual or GPU verification.** Headless mode uses a dummy renderer. The
-  script confirms the scene builds and the game loop runs cleanly; it cannot
-  confirm that anything looks right. Layout, colours, HUD readability, and
-  shadows need a human on a real machine.
+- **The harness itself renders nothing.** Every check above runs under Godot's
+  headless dummy renderer. It proves the scene builds, the camera geometry is
+  sane and the world is configured as intended; it cannot prove that the result
+  looks right. Rendered evidence exists separately (section 7) and still needs a
+  human eye, especially on a phone screen.
+- **Screenshots are software-rendered.** They were produced with Mesa's lavapipe
+  Vulkan driver on a CPU. Geometry, materials, shadows and fog are the engine's
+  own maths, but colour precision, antialiasing and performance on a real
+  Adreno/Mali GPU are not reproduced.
 - **Font warnings are filtered, not fixed.** The build container for this
   project historically had no `libfontconfig.so.1`, so every run prints
   `ERROR: Unable to load fontconfig, system font support is disabled.` (also seen
@@ -315,3 +381,63 @@ deployed or published.
 The workflow has to be confirmed by GitHub itself. Until a run has actually
 completed there, treat it as unverified — this repository has never had a CI run
 observed from this environment.
+
+---
+
+## 7. Rendered screenshots
+
+The headless suites cannot see anything, so the visual phase adds a small
+capture tool that renders the **real** main scene and writes PNGs:
+
+```bash
+# Any machine with a display and a Vulkan driver:
+godot --path . --rendering-driver vulkan res://scenes/tools/capture_shots.tscn
+```
+
+It loads `scenes/main.tscn`, pauses gameplay, places the hunter and deer for five
+situations, and writes `artifacts/*.png` (git-ignored). It also prints the camera
+measurements and the frame cost, so the numbers in a report can be checked
+against a run instead of being taken on trust:
+
+```
+SHOT spawn: camera_distance=6.00 obstructed=false
+SHOT obstructed: tree=(9.59, 0.0, -11.78) camera_distance=1.93 clear=2.06 obstructed=true
+RENDER_STATS draw_calls=268 objects=523 primitives=255976
+SCENE_STATS nodes=265 trees=84 far_trees=54 tree_nodes=17
+```
+
+| Shot | What it is for |
+|---|---|
+| `01_spawn` | default gameplay framing: hunter readable, forest behind, deer ahead |
+| `02_deer_close` | deer at close range in `ALERTED`, to judge the model and its contrast against foliage |
+| `03_chase` | deer fleeing off to the side, showing that the shoulder offset keeps it out from behind the hunter |
+| `04_obstructed` | hunter pinned against a trunk: the camera pulls in and looks over his shoulder instead of filling the screen with bark |
+| `05_horizon` | treeline, fog and horizon seam at the world edge |
+
+The committed copies live in `docs/screenshots/phase-3.1/` (960×540, downscaled
+from the 1280×720 renders to keep the repository small).
+
+### Rendering without a GPU
+
+This project's verification VM has no GPU and no display server, so the shots
+above were produced with Mesa's software Vulkan driver:
+
+```bash
+# Ubuntu 24.04 packages, extracted without root into /tmp:
+#   xvfb, x11-xkb-utils, xkb-data, libxfont2, libxfontenc, libpixman, libpng,
+#   libfreetype, libxkbfile, libxcursor, libxrandr, libxi, libxinerama,
+#   libxext, libxrender, libxfixes, libxkbcommon, libx11-xcb, libwayland-client,
+#   mesa-vulkan-drivers (lavapipe)
+Xvfb :99 -screen 0 1600x900x24 &          # inside a user namespace, because the
+                                          # keymap path is hard-coded
+export DISPLAY=:99
+export VK_ICD_FILENAMES=/path/to/lvp_icd.json
+godot --path . --rendering-driver vulkan --resolution 1280x720 \
+      res://scenes/tools/capture_shots.tscn
+```
+
+Godot reports `Vulkan 1.4.318 - Forward+ - Using Device #0: llvmpipe`, i.e. the
+project's own mobile/Forward+ renderer path on a CPU rasteriser. This is a
+developer convenience, not a supported configuration, and it is **not** part of
+`scripts/verify_project.sh` or CI: those run headless and must stay green on a
+machine with no display at all.

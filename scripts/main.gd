@@ -13,6 +13,11 @@ const HunterRig := preload("res://scripts/visuals/hunter_rig.gd")
 const DeerRig := preload("res://scripts/visuals/deer_rig.gd")
 const DeerAI := preload("res://scripts/animals/deer_ai.gd")
 const HuntSession := preload("res://scripts/gameplay/hunt_session.gd")
+const CameraRig := preload("res://scripts/visuals/camera_rig.gd")
+const Forest := preload("res://scripts/visuals/forest.gd")
+const WildsGround := preload("res://scripts/visuals/wilds_ground.gd")
+const WildsEnvironment := preload("res://scripts/visuals/wilds_environment.gd")
+const DeerMarker := preload("res://scripts/ui/deer_marker.gd")
 
 const WORLD_SIZE := 90.0
 const GRAVITY := 20.0
@@ -36,6 +41,12 @@ var deer_ai: DeerAI
 var hunt_session: HuntSession
 var deer_collider: CollisionShape3D
 var camera: Camera3D
+var camera_rig: CameraRig
+var deer_marker: Control
+## Summary dictionaries from the visual builders, used by the visual tests.
+var forest_info := {}
+var ground_info := {}
+var environment_info := {}
 var status_label: Label
 var info_label: Label
 var move_vector := Vector2.ZERO
@@ -98,78 +109,20 @@ func _mesh_node(parent: Node, mesh: Mesh, material: Material, pos: Vector3, scal
 	return n
 
 func _build_environment() -> void:
-	var env := WorldEnvironment.new()
-	var e := Environment.new()
-	e.background_mode = Environment.BG_SKY
-	var sky := Sky.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.10, 0.19, 0.22)
-	sky_mat.sky_horizon_color = Color(0.62, 0.58, 0.42)
-	sky_mat.ground_bottom_color = Color(0.07, 0.10, 0.07)
-	sky_mat.ground_horizon_color = Color(0.30, 0.34, 0.23)
-	sky.sky_material = sky_mat
-	e.sky = sky
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.62, 0.68, 0.60)
-	e.ambient_light_energy = 0.65
-	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	e.fog_enabled = true
-	e.fog_light_color = Color(0.48, 0.53, 0.42)
-	e.fog_density = 0.006
-	env.environment = e
-	add_child(env)
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-48, -32, 0)
-	sun.light_color = Color(1.0, 0.83, 0.62)
-	sun.light_energy = 1.25
-	sun.shadow_enabled = true
-	add_child(sun)
+	environment_info = WildsEnvironment.build(self)
 
 func _build_world() -> void:
-	var ground_body := StaticBody3D.new()
-	ground_body.name = "ForestGround"
-	add_child(ground_body)
-	var ground := _mesh_node(ground_body, PlaneMesh.new(), _mat(Color(0.16, 0.22, 0.13)), Vector3.ZERO, Vector3(WORLD_SIZE, 1, WORLD_SIZE))
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(WORLD_SIZE, 1, WORLD_SIZE)
-	cs.shape = box
-	cs.position.y = -0.55
-	ground_body.add_child(cs)
-	# Fern-like ground patches and stones.
-	for i in range(75):
-		var x := randf_range(-42, 42)
-		var z := randf_range(-42, 42)
-		if Vector2(x, z).length() < 5.5: continue
-		var stone_mesh := SphereMesh.new()
-		stone_mesh.radius = randf_range(0.18, 0.48)
-		stone_mesh.height = stone_mesh.radius * 1.1
-		_mesh_node(self, stone_mesh, _mat(Color(0.25, 0.28, 0.23)), Vector3(x, 0.05, z), Vector3(1.4, 0.55, 1.0))
-	# Procedural trees around a playable clearing.
-	for i in range(95):
-		var angle := randf() * TAU
-		var radius := randf_range(13, 43)
-		var p := Vector3(cos(angle) * radius, 0, sin(angle) * radius)
-		if abs(p.x) < 5 and abs(p.z) < 7: continue
-		_create_tree(p, randf_range(0.8, 1.35))
+	# One generator for the whole world, seeded from the global RNG: a test seed
+	# still reproduces the forest, stones and grass exactly.
+	var world_rng := RandomNumberGenerator.new()
+	world_rng.seed = randi()
+	ground_info = WildsGround.build(self, world_rng)
+	forest_info = Forest.build(self, world_rng)
 	# A small ruined stone arch gives the clearing a landmark.
 	_create_ruin(Vector3(-10, 0, -15))
 
-func _create_tree(p: Vector3, s: float) -> void:
-	var trunk := CylinderMesh.new()
-	trunk.top_radius = 0.22 * s
-	trunk.bottom_radius = 0.38 * s
-	trunk.height = 3.4 * s
-	_mesh_node(self, trunk, _mat(Color(0.20, 0.12, 0.075)), p + Vector3(0, 1.7 * s, 0))
-	for j in range(3):
-		var crown := SphereMesh.new()
-		crown.radius = 1.65 * s * (1.0 - j * 0.13)
-		crown.height = 2.5 * s
-		var green: Color = [Color(0.10, 0.23, 0.15), Color(0.13, 0.29, 0.17), Color(0.18, 0.32, 0.19)][randi_range(0, 2)]
-		_mesh_node(self, crown, _mat(green), p + Vector3(0, (3.1 + j * 0.65) * s, 0), Vector3(1, 0.82, 1))
-
 func _create_ruin(p: Vector3) -> void:
-	var stone := _mat(Color(0.34, 0.34, 0.28))
+	var stone := _mat(Color(0.175, 0.185, 0.165))
 	for x in [-2.2, 2.2]:
 		var pillar := BoxMesh.new()
 		pillar.size = Vector3(0.8, 4.2, 0.9)
@@ -222,13 +175,14 @@ func _active_seed() -> int:
 	return int(_seed_value) if test_seed_active else -1
 
 func _build_camera() -> void:
-	camera = Camera3D.new()
-	camera.name = "GameCamera"
-	camera.current = true
-	camera.fov = 65
-	add_child(camera)
-	camera.global_position = hunter.global_position + Vector3(0, 6.5, 9.5)
-	camera.look_at(hunter.global_position + Vector3(0, 1.0, 0), Vector3.UP)
+	# Presentation only: the rig smooths its own motion and pulls in when a tree
+	# or the ground gets between it and the hunter.
+	camera_rig = CameraRig.new()
+	camera_rig.name = "CameraRig"
+	add_child(camera_rig)
+	camera_rig.ignore_bodies([hunter.get_rid(), deer.get_rid()])
+	camera_rig.snap_to(hunter.global_position, hunter.rotation.y)
+	camera = camera_rig.camera
 
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
@@ -257,6 +211,12 @@ func _build_hud() -> void:
 	_add_hold_button(root, "▼", Vector2(112, -64), "move_back")
 	_add_hold_button(root, "◀", Vector2(52, -124), "move_left")
 	_add_hold_button(root, "▶", Vector2(172, -124), "move_right")
+	# Edge-of-screen cue for a deer that has left the frame. Added after the
+	# labels so it never covers the HUD text, and ignored by the mouse.
+	deer_marker = DeerMarker.new()
+	deer_marker.name = "DeerMarker"
+	deer_marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.add_child(deer_marker)
 	hunt_button = Button.new()
 	hunt_button.text = "HUNT / TRACK"
 	hunt_button.position = Vector2(-210, -105)
@@ -323,8 +283,9 @@ func _physics_process(delta: float) -> void:
 	hunter_rig.animate(delta, Vector2(hunter.velocity.x, hunter.velocity.z).length())
 	_update_deer(delta)
 	_check_capture()
-	camera.global_position = camera.global_position.lerp(hunter.global_position + Vector3(0, 6.2, 9.0).rotated(Vector3.UP, hunter.rotation.y), delta * 3.5)
-	camera.look_at(hunter.global_position + Vector3(0, 1.0, 0), Vector3.UP)
+	camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
+	if deer_marker != null:
+		deer_marker.update_marker(camera, deer.global_position, deer.visible and not hunt_session.is_captured)
 	info_label.text = "STAMINA %d%%   •   FOREST REGION   •   DEER %s" % [int(stamina), deer_state]
 
 func _update_deer(delta: float) -> void:
@@ -441,10 +402,18 @@ func _read_test_seed():
 		return int(from_env)
 	return null
 
-# Stable fingerprint of the generated world, used to prove a seed reproduces it.
+## Stable fingerprint of the generated world, used to prove a seed reproduces it.
+## Trees, stones and grass are MultiMesh batches now, so the instance transforms
+## have to be part of the fingerprint, not just standalone mesh nodes.
 func _world_checksum() -> String:
 	var parts := PackedStringArray()
 	for child in get_children():
-		if child is MeshInstance3D:
+		if child is MultiMeshInstance3D:
+			var multimesh: MultiMesh = child.multimesh
+			parts.append("mm:%d:%d" % [child.get_index(), multimesh.instance_count])
+			for i in range(multimesh.instance_count):
+				var origin: Vector3 = multimesh.get_instance_transform(i).origin
+				parts.append("%.3f,%.3f,%.3f" % [origin.x, origin.y, origin.z])
+		elif child is MeshInstance3D:
 			parts.append("%.4f,%.4f,%.4f" % [child.position.x, child.position.y, child.position.z])
 	return ",".join(parts).sha256_text()
