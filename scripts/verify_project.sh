@@ -11,6 +11,7 @@
 # Environment:
 #   GODOT                    Path to the Godot 4.7.2 executable.
 #   REQUIRED_GODOT_VERSION   Version to require (default 4.7.2).
+#   GODOT_TIMEOUT            Seconds allowed per engine run (default 180).
 #
 # See TESTING.md for what each check verifies and how to read the output.
 
@@ -21,6 +22,9 @@ REQUIRED_GODOT_VERSION="${REQUIRED_GODOT_VERSION:-4.7.2}"
 FRAMES=180
 VERBOSE=0
 GODOT_BIN="${GODOT:-}"
+# Every engine run is bounded: a scene that never reaches quit() must fail the
+# harness instead of blocking it forever.
+GODOT_TIMEOUT="${GODOT_TIMEOUT:-180}"
 
 # Engine messages that are not project problems: this machine ships without
 # fontconfig and without a display, so these appear on every run.
@@ -70,6 +74,16 @@ show() {
 	head -n "$limit" "$1" | sed 's/^/          /'
 }
 
+# Runs the engine under a wall-clock limit. Returns 124 when the limit is hit,
+# which the sections report as a timeout rather than a pass.
+godot_run() {
+	if command -v timeout >/dev/null 2>&1; then
+		timeout --kill-after=10 "$GODOT_TIMEOUT" "$GODOT_BIN" "$@"
+	else
+		"$GODOT_BIN" "$@"
+	fi
+}
+
 printf 'ATHAR project verification\n'
 printf 'Repository: %s\n' "$ROOT"
 
@@ -102,7 +116,7 @@ fi
 # ----------------------------------------------------------------- B. import --
 section "B. Project import"
 IMPORT_LOG="$LOG_DIR/import.log"
-"$GODOT_BIN" --headless --path "$ROOT" --import >"$IMPORT_LOG" 2>&1
+godot_run --headless --path "$ROOT" --import >"$IMPORT_LOG" 2>&1
 IMPORT_STATUS=$?
 project_errors "$IMPORT_LOG" >"$LOG_DIR/import.errors"
 if [ "$IMPORT_STATUS" -eq 0 ]; then
@@ -133,7 +147,7 @@ fi
 for file in "${GD_FILES[@]}"; do
 	rel="${file#./}"
 	log="$LOG_DIR/check-$(echo "$rel" | tr '/' '_').log"
-	"$GODOT_BIN" --headless --path "$ROOT" --check-only --script "res://$rel" >"$log" 2>&1
+	godot_run --headless --path "$ROOT" --check-only --script "res://$rel" >"$log" 2>&1
 	status=$?
 	project_errors "$log" >"$log.err"
 	if [ "$status" -eq 0 ] && [ ! -s "$log.err" ]; then
@@ -147,7 +161,7 @@ done
 # ------------------------------------------------------------- D. startup ----
 section "D. Headless startup ($FRAMES frames)"
 START_LOG="$LOG_DIR/startup.log"
-"$GODOT_BIN" --headless --path "$ROOT" --quit-after "$FRAMES" >"$START_LOG" 2>&1
+godot_run --headless --path "$ROOT" --quit-after "$FRAMES" >"$START_LOG" 2>&1
 START_STATUS=$?
 project_errors "$START_LOG" >"$LOG_DIR/startup.errors"
 if [ "$START_STATUS" -eq 0 ]; then
@@ -171,7 +185,7 @@ fi
 
 # ----------------------------------------------------- E. repository integrity
 section "E. Repository integrity"
-for required in project.godot scenes/main.tscn scripts/main.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
+for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
 	if [ -e "$ROOT/$required" ]; then
 		pass "$required present"
 	else
@@ -220,7 +234,7 @@ fi
 section "F. Reproducible gameplay"
 run_world() {
 	local log="$1"; shift
-	"$GODOT_BIN" --headless --path "$ROOT" --quit-after 3 "$@" >"$log" 2>&1
+	godot_run --headless --path "$ROOT" --quit-after 3 "$@" >"$log" 2>&1
 }
 checksum_of() { sed -n 's/^ATHAR_TEST_WORLD_CHECKSUM=//p' "$1" | head -n 1; }
 
@@ -258,6 +272,46 @@ if [ -n "$RAND_A" ] && [ -n "$RAND_B" ] && [ "$RAND_A" != "$RAND_B" ]; then
 	pass "unseeded runs stay randomized (normal gameplay preserved)"
 else
 	fail "unseeded runs are identical: normal randomization is not active"
+fi
+
+# ------------------------------------------------------- G. hunting system ---
+section "G. Hunting system tests"
+HUNT_LOG="$LOG_DIR/hunting-tests.log"
+godot_run --headless --path "$ROOT" res://scenes/tests/hunting_tests.tscn >"$HUNT_LOG" 2>&1
+HUNT_STATUS=$?
+project_errors "$HUNT_LOG" >"$LOG_DIR/hunting.errors"
+if [ "$HUNT_STATUS" -eq 0 ]; then
+	pass "hunting tests exited 0"
+elif [ "$HUNT_STATUS" -eq 124 ]; then
+	fail "hunting tests timed out after ${GODOT_TIMEOUT}s (the suite never exited)"
+	grep -a '^  '"$HUNT_LOG" | sed 's/^/          /' | tail -n 8
+else
+	fail "hunting tests exited $HUNT_STATUS"
+fi
+if [ -s "$LOG_DIR/hunting.errors" ]; then
+	fail "hunting tests reported project errors"
+	show "$LOG_DIR/hunting.errors"
+else
+	info "no project errors during hunting tests"
+fi
+HUNT_RESULT="$(grep -a '^RESULT:' "$HUNT_LOG" | tail -n 1)"
+if [ -n "$HUNT_RESULT" ]; then
+	info "$HUNT_RESULT"
+else
+	fail "hunting tests did not print a result summary"
+	show "$HUNT_LOG" 30
+fi
+HUNT_CHECKS="$(printf '%s' "$HUNT_RESULT" | sed -n 's/^RESULT: \([0-9][0-9]*\) checks,.*/\1/p')"
+if [ -n "$HUNT_CHECKS" ] && [ "$HUNT_CHECKS" -ge 50 ]; then
+	pass "all $HUNT_CHECKS hunting checks reported"
+else
+	fail "hunting suite is incomplete (${HUNT_CHECKS:-0} checks reported, expected at least 50)"
+fi
+if printf '%s' "$HUNT_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; then
+	pass "every hunting check passed"
+else
+	fail "hunting checks failed: ${HUNT_RESULT:-no summary}"
+	grep -a '^  FAIL' "$HUNT_LOG" | sed 's/^/          /' | head -n 12
 fi
 
 # ----------------------------------------------------------------- summary ---

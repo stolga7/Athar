@@ -1,8 +1,8 @@
 # ATHAR — Testing and Verification
 
-How to check that the project still builds, parses, starts, and generates the
-same world from the same seed — everything that can be verified without a
-display, a GPU, or an Android toolchain.
+How to check that the project still builds, parses, starts, generates the same
+world from the same seed, and plays the hunting loop correctly — everything that
+can be verified without a display, a GPU, or an Android toolchain.
 
 Verification is a plain Bash script. There is no third-party test framework and
 no extra dependency to install.
@@ -54,6 +54,17 @@ Options:
 | `--verbose`, `-v` | Keep the log directory even on success and list each compared world |
 | `--help`, `-h` | Print usage |
 
+Environment:
+
+| Variable | Effect |
+|---|---|
+| `GODOT` | Engine binary to use (same as `--godot`) |
+| `REQUIRED_GODOT_VERSION` | Version check target (default `4.7.2`) |
+| `GODOT_TIMEOUT` | Seconds allowed per engine run (default `180`) |
+
+Every engine run is wrapped in a wall-clock limit, so a scene that never exits
+fails the check with `timed out after Ns` instead of blocking the harness.
+
 Exit status: **`0`** when every check passed, **`1`** on any failure, **`2`** on
 a bad command-line option. The script never reports success for a check it did
 not run.
@@ -94,8 +105,11 @@ would also be produced by a scene that loaded no world at all.
 
 ### E. Repository integrity
 Confirms the files the project cannot work without are present — `project.godot`,
-`scenes/main.tscn`, `scripts/main.gd`, `icon.svg`, `icon.svg.import`,
-`.gitignore`, `README.md`, `TESTING.md`, `assets/` — and that:
+`scenes/main.tscn`, `scenes/tests/hunting_tests.tscn`, `scripts/main.gd`,
+`scripts/animals/deer_ai.gd`, `scripts/gameplay/hunt_session.gd`,
+`scripts/tests/hunting_tests.gd`, `scripts/visuals/deer_rig.gd`,
+`scripts/visuals/hunter_rig.gd`, `scripts/visuals/rig_utils.gd`, `icon.svg`,
+`icon.svg.import`, `.gitignore`, `README.md`, `TESTING.md`, `assets/` — and that:
 
 - `project.godot` still points at `res://scenes/main.tscn`;
 - the main scene is still wired to `scripts/main.gd`;
@@ -135,6 +149,78 @@ layout:
 The checksum is printed when a test seed is active, and also in headless runs so
 these comparisons are possible. Desktop play prints nothing.
 
+### G. Hunting system tests
+Runs `scenes/tests/hunting_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/hunting_tests.tscn
+```
+
+The suite prints one `PASS`/`FAIL` line per check and ends with
+`RESULT: <n> checks, <m> failed`, exiting `0` only when nothing failed. Check G
+requires all of: exit code 0, no project errors in the output, a result summary
+with at least 50 checks, and `0 failed`. A partial run cannot pass: an exit
+without a summary, or a summary with too few checks, is a failure.
+
+Two independent guards stop a broken suite from hanging:
+
+- **Inside the suite** a watchdog timer ends the process with code `2` and a
+  failure summary if the tests do not reach their verdict within 90 seconds
+  (this covers a script error that aborts the test entry point).
+- **In the harness** every engine run has a wall-clock limit (`GODOT_TIMEOUT`,
+  180 s by default); exceeding it reports `timed out after Ns` as a failure and
+  keeps going (this covers a genuine infinite loop, which no timer can interrupt).
+
+What it verifies, in three groups.
+
+*Behaviour (`scripts/animals/deer_ai.gd`, simulated at a fixed 60 Hz step):*
+
+| Area | Checks |
+|---|---|
+| Detection | a hunter 17 m away is ignored; inside 13 m the deer becomes `ALERTED` |
+| Alert delay | the deer freezes for 0.55 s instead of bolting instantly |
+| State order | `GRAZING → ALERTED → FLEEING → ESCAPING`, and the speed that belongs to each |
+| Speeds | sprint 5.6 m/s > hunter 4.4 m/s > tired 3.4 m/s |
+| Fair chase | a fresh deer gains ground; sustained pursuit captures it, in 10.2 s, and not instantly or never (window: 3–30 s) |
+| Escape | an unpursued deer breaks away at 23 m and returns to `GRAZING` |
+| Boundaries | a fleeing deer stays inside the world and steers back from the edge |
+| Determinism | the same seed replays the same hunt and the same grazing path; a different seed changes it |
+| Capture | out-of-reach is refused, in-reach succeeds once, repeats are refused, count stays 1 |
+| Signals | `deer_captured` and `hunt_started` fire exactly once each |
+| New hunt | cannot start before a capture, starts after one, advances the index, capture works again |
+
+*Models (mesh bounding boxes, no renderer):* the hunter measures 2.13 m to the
+hood tip, 0.84 × 0.74 m in footprint, with boots on the ground; the deer measures
+1.81 m to the antler tips, 1.40 m long, 0.51 m wide, hooves on the ground. These
+catch a collapsed or floating model, not an ugly one.
+
+*Live scene (`scenes/main.tscn`):* the hunter rig has 56 mesh parts and the deer
+46; the hunter's legs rotate when walking; the deer's neck moves between idle
+poses; every deer state poses without error; walking into the deer captures it
+exactly once, disables its collision, stops its movement and takes it out of
+active play; the button becomes `NEW HUNT`; pressing it starts a new hunt with a
+visible, colliding, grazing deer at least 15 m away.
+
+Exact hunting values, all named constants:
+
+| Constant | Value | File |
+|---|---|---|
+| `HUNTER_SPEED` | 4.4 m/s | `scripts/main.gd` |
+| `DETECT_RADIUS` | 13.0 m | `deer_ai.gd` |
+| `ALERT_DURATION` | 0.55 s | `deer_ai.gd` |
+| `SPRINT_SPEED` | 5.6 m/s | `deer_ai.gd` |
+| `SPRINT_DRAIN` | 0.35 stamina/s | `deer_ai.gd` |
+| `SPRINT_EXIT_STAMINA` | 0.25 | `deer_ai.gd` |
+| `ESCAPE_SPEED` | 3.4 m/s | `deer_ai.gd` |
+| `STAMINA_REGEN` | 0.06 stamina/s | `deer_ai.gd` |
+| `SECOND_WIND_DISTANCE` / `_STAMINA` | 7.5 m / 0.45 | `deer_ai.gd` |
+| `ESCAPE_BREAK_DISTANCE` / `_STAMINA` | 23.0 m / 0.60 | `deer_ai.gd` |
+| `STEER_INTERVAL` | 0.30 s | `deer_ai.gd` |
+| `GRAZE_SPEED` | 1.05 m/s | `deer_ai.gd` |
+| `WORLD_LIMIT` / `BOUNDARY_MARGIN` | 41.0 m / 5.0 m | `deer_ai.gd` |
+| `CAPTURE_DISTANCE` | 1.8 m | `hunt_session.gd` |
+| `NEW_HUNT_MIN_DISTANCE` / `_MAX_` | 16.0 m / 26.0 m | `main.gd` |
+
 ---
 
 ## 4. Reading the result
@@ -144,9 +230,12 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  24 checks, 0 failed
+  37 checks, 0 failed
   ALL CHECKS PASSED
 ```
+
+Check G's own output is one line here; the 66 hunting checks it gates are
+listed in full in `hunting-tests.log` and summarised as `RESULT: 66 checks, 0 failed`.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -164,6 +253,8 @@ Useful log files:
 | `check-*.log` / `check-*.log.err` | per-script parse output |
 | `startup.log` / `startup.errors` | full startup run and its project errors |
 | `seed_*.log`, `rand_*.log` | the five world-generation runs |
+| `hunting-tests.log` | the full hunting suite output |
+| `hunting.errors` | project errors found in the hunting run, after filtering |
 
 Intended workflow on failure:
 
@@ -197,9 +288,13 @@ These are honest gaps. None of them makes the automated run green by default.
 - **No audio, input, or touch verification.** There is no audio device, and
   button presses cannot be delivered headlessly. The hunt button, touch pads,
   and HUD interactions are exercised only by the scene being built.
-- **No gameplay-balance assertions.** Deliberately out of scope: current
-  behaviour is recorded as-is, and no test encodes a balance target that was
-  never agreed.
+- **Balance is asserted, art is not.** The hunting suite encodes the agreed
+  chase targets (sprint outruns the hunter, tired deer does not, capture inside
+  3–30 s). It says nothing about whether the models *look* good, and no
+  screenshot or render is produced anywhere in this harness.
+- **Touch input is simulated, not touched.** The live-scene checks call the
+  button's signal handler directly, so capture and `NEW HUNT` are exercised
+  end-to-end in the scene, but no real touch event is delivered.
 - **No Android checks.** No export preset, templates, SDK, or keystore are
   present, so no APK is built or validated. A device test remains the only real
   confirmation of the mobile build.
