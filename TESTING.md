@@ -279,6 +279,63 @@ Camera and world constants, all named:
 | `ALBEDO_TILE` / `NORMAL_TILE` | 26 / 58 | `wilds_ground.gd` |
 | `ON_SCREEN_DISTANCE` / `EDGE_MARGIN` | 15 m / 76 px | `deer_marker.gd` |
 
+### I. Wildlife AI tests
+Runs `scenes/tests/wildlife_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/wildlife_tests.tscn
+```
+
+Same contract as G and H: exit code 0, no project errors, a `RESULT:` summary
+with at least 90 checks, and `0 failed`. Perception and avoidance are fed fake
+probes (an open field, an infinite wall, permanent cover), so line of sight and
+obstacle avoidance are tested without a renderer or real physics; the last group
+loads the real scene to prove the brain is wired to it.
+
+| Area | What is asserted |
+|---|---|
+| Architecture | the brain is split into profile, perception and steering layers |
+| Calm behaviour | grazing, watching and wandering cycle on timers; no state change every frame; minimum dwell respected; a grazing deer walks; it drifts back from the world edge |
+| Vision | seen at 12.5 m ahead; missed at 20 m; missed 12 m directly behind; noticed 6 m behind; a trunk blocks sight, even at close range; field of view is panoramic but not all-round; personality never moves the detection distance |
+| Hearing | a running hunter is heard from behind and causes an alarm; the same hunter beyond earshot is not heard; a walking hunter at that range is not heard; a standing hunter is silent but visible; quiet footsteps behind cover are heard without an alarm |
+| Memory | a sighting is stored with its position; cover does not erase it; it keeps the deer from relaxing; it expires on its own; seeing the threat again refreshes it |
+| Alarm flow | a close threat leads to flight; a distant one is investigated; investigating closes distance and then ends by itself; returning re-alerts if the hunter reappears; the deer relaxes again |
+| Flight | sprint and escape speeds are the tuned ones; speed cap respected; no per-frame teleport; breaking away goes through `RETURNING` before grazing |
+| Avoidance | a blocked course is turned aside; the chosen detour is open; the deer commits to one side; it runs along a wall instead of through it or stalling |
+| Personality | all four temperaments appear across 60 seeds; memory and hearing differ; the same seed gives the same animal; speeds never change; every temperament is still catchable in 3–30 s |
+| Determinism | the same seed replays the same states and positions; another seed diverges |
+| Compatibility | capture is single-shot, reset restores a calm rested deer, `state_changed` fires once per transition, the hunt session still starts and ends a hunt |
+| Live scene | the scene uses the layered brain, a temperament is assigned, the deer notices a hunter in the open and moves away, every state poses cleanly, walking into it still captures it |
+
+Wildlife values, all named constants:
+
+| Constant | Value | File |
+|---|---|---|
+| `DETECT_RADIUS` (sight floor) | 13.0 m | `deer_ai.gd` |
+| `VISION_ANGLE_DEGREES` | 300° (±150°) | `deer_ai.gd` |
+| `PROXIMITY_RANGE` | 10.0 m | `deer_ai.gd` |
+| `HEARING_RANGE` | 18.0 m at a sprint | `deer_ai.gd` |
+| `MEMORY_TIME` | 6.0 s (×0.6 when only heard) | `deer_ai.gd` |
+| `RECOVERY_TIME` | 4.0 s | `deer_ai.gd` |
+| `ALERT_DURATION` | 0.55 s freeze | `deer_ai.gd` |
+| `confirm_distance` | vision × 0.74–0.90 | `wildlife_profile.gd` |
+| `NOISE_ALERT_LEVEL` | 0.45 of a sprint | `deer_ai.gd` |
+| `NOISE_REFERENCE_SPEED` / `MIN_NOISE_SPEED` | 4.4 m/s / 0.3 m/s | `wildlife_perception.gd` |
+| `ACCELERATION` / `DECELERATION` | 9.0 / 14.0 m/s² | `deer_ai.gd` |
+| `AVOID_LOOKAHEAD` / `AVOID_REFRESH` | 2.8 m / 0.45 s | `deer_ai.gd` |
+| `MIN_DWELL` | 0.9 s | `deer_ai.gd` |
+| `SPRINT_SPEED` / `ESCAPE_SPEED` / `GRAZE_SPEED` | 5.6 / 3.4 / 1.05 m/s | `deer_ai.gd` |
+| `TRAIT_JITTER` | ±6% | `wildlife_profile.gd` |
+
+Temperaments (multipliers on the blueprint, `wildlife_profile.gd`):
+
+| Archetype | Field of view | Hearing | Memory | Recovery | Confirm flight at |
+|---|---|---|---|---|---|
+| steady | ×1.00 | ×1.00 | ×1.00 | ×1.00 | 0.82 × sight |
+| cautious | ×1.03 | ×1.05 | ×1.30 | ×1.35 | 0.90 × sight |
+| bold | ×0.93 | ×0.92 | ×0.80 | ×0.85 | 0.74 × sight |
+| nervous | ×1.00 | ×1.18 | ×1.10 | ×1.15 | 0.86 × sight |
+
 ---
 
 ## 4. Reading the result
@@ -288,13 +345,14 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  56 checks, 0 failed
+  71 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Checks G and H are one line each here; the 66 hunting checks and the 53 camera
-and visual checks they gate are listed in full in `hunting-tests.log` and
-`visual-tests.log`, and summarised as `RESULT: <n> checks, 0 failed`.
+Checks G, H and I are one line each here; the 66 hunting, 53 camera/visual and
+100 wildlife checks they gate are listed in full in `hunting-tests.log`,
+`visual-tests.log` and `wildlife-tests.log`, and summarised as
+`RESULT: <n> checks, 0 failed`.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -316,6 +374,8 @@ Useful log files:
 | `hunting.errors` | project errors found in the hunting run, after filtering |
 | `visual-tests.log` | the full camera/visual suite output |
 | `visual.errors` | project errors found in the visual run, after filtering |
+| `wildlife-tests.log` | the full wildlife AI suite output |
+| `wildlife.errors` | project errors found in the wildlife run, after filtering |
 
 Intended workflow on failure:
 
@@ -416,6 +476,22 @@ SCENE_STATS nodes=265 trees=84 far_trees=54 tree_nodes=17
 
 The committed copies live in `docs/screenshots/phase-3.1/` (960×540, downscaled
 from the 1280×720 renders to keep the repository small).
+
+### Behaviour screenshots
+
+`scenes/tools/behaviour_shots.tscn` renders the animal itself, one frame per
+behaviour state, using the same real scene and rig:
+
+```bash
+godot --path . --rendering-driver vulkan res://scenes/tools/behaviour_shots.tscn
+```
+
+It writes `artifacts/behaviour_0*.png` for `GRAZING`, `OBSERVING`, `ALERTED`,
+`FLEEING`, `RETURNING` and `RESTING`, and the committed copies are in
+`docs/screenshots/phase-3.2/`. Positions and camera are staged by hand; the
+states, poses and animation are the project's own, so the images show what the
+rig does with each state rather than a mock-up. They are a review aid, not a
+test: nothing in the harness depends on them.
 
 ### Rendering without a GPU
 

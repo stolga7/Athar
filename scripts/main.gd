@@ -167,9 +167,12 @@ func _build_deer() -> void:
 	deer_collider.position.y = 0.78
 	deer.add_child(deer_collider)
 	hunt_session = HuntSession.new()
-	# A supplied test seed also drives the deer's grazing wander, so a seeded
-	# hunt replays exactly; normal play stays random.
+	# A supplied test seed also drives the deer's personality and wander, so a
+	# seeded hunt replays exactly; normal play stays random.
 	deer_ai = DeerAI.new(_active_seed())
+	# The AI is pure logic; these two probes are how it asks the physics world
+	# whether a trunk blocks its line of sight or its next step.
+	deer_ai.set_navigation_probe(_deer_path_blocked)
 
 func _active_seed() -> int:
 	return int(_seed_value) if test_seed_active else -1
@@ -286,12 +289,27 @@ func _physics_process(delta: float) -> void:
 	camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
 	if deer_marker != null:
 		deer_marker.update_marker(camera, deer.global_position, deer.visible and not hunt_session.is_captured)
-	info_label.text = "STAMINA %d%%   •   FOREST REGION   •   DEER %s" % [int(stamina), deer_state]
+	info_label.text = "STAMINA %d%%   •   FOREST REGION   •   DEER %s" % [int(stamina), deer_ai.activity_text().to_upper()]
+
+## True when a trunk sits on the straight line from `from` to `to`. Only tree
+## trunks (layer 2) and the ground (layer 1) count; the deer itself is excluded.
+func _deer_sight_blocked(from: Vector3, to: Vector3) -> bool:
+	return _deer_ray_blocked(from + Vector3.UP * 1.10, to + Vector3.UP * 1.10)
+
+## True when the deer's next step would run into a trunk.
+func _deer_path_blocked(from: Vector3, to: Vector3) -> bool:
+	return _deer_ray_blocked(from + Vector3.UP * 0.90, to + Vector3.UP * 0.90)
+
+func _deer_ray_blocked(from: Vector3, to: Vector3) -> bool:
+	if deer == null or not is_inside_tree() or get_world_3d() == null:
+		return false
+	var query := PhysicsRayQueryParameters3D.create(from, to, 3, [deer.get_rid()])
+	return not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
 func _update_deer(delta: float) -> void:
 	if hunt_session.is_captured:
 		return
-	var desired: Vector3 = deer_ai.update(delta, deer.global_position, hunter.global_position)
+	var desired: Vector3 = deer_ai.update(delta, deer.global_position, hunter.global_position, _deer_sight_blocked)
 	deer.velocity.x = desired.x
 	deer.velocity.z = desired.z
 	var planar := Vector2(desired.x, desired.z).length()
@@ -325,13 +343,20 @@ func _on_deer_state_changed(previous: String, current: String) -> void:
 	match current:
 		DeerAI.ALERTED:
 			_update_status("The deer lifts its head — it has noticed you. Hold still.")
+		DeerAI.INVESTIGATING:
+			_update_status("It is edging closer to look. Do not move yet.")
 		DeerAI.FLEEING:
 			_update_status("It bolted! Chase now — it will tire before you do.")
 		DeerAI.ESCAPING:
 			_update_status("The deer is tiring. Keep the pressure on and close the gap.")
+		DeerAI.RETURNING:
+			_update_status("It is drifting away, still wary. Let it settle.")
 		DeerAI.GRAZING:
-			if previous == DeerAI.ESCAPING:
+			if previous in [DeerAI.ESCAPING, DeerAI.RETURNING]:
 				_update_status("The deer slipped away and settled down. Approach quietly again.")
+		DeerAI.RESTING:
+			if previous == DeerAI.GRAZING:
+				_update_status("The deer has settled to rest. Move slowly.")
 
 ## Capture disables the deer's collision so it cannot be pushed, collided with,
 ## or captured again; a new hunt re-enables it.

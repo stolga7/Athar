@@ -185,7 +185,7 @@ fi
 
 # ----------------------------------------------------- E. repository integrity
 section "E. Repository integrity"
-for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tools/capture_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
+for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
 	if [ -e "$ROOT/$required" ]; then
 		pass "$required present"
 	else
@@ -352,6 +352,46 @@ if printf '%s' "$VISUAL_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$';
 else
 	fail "visual checks failed: ${VISUAL_RESULT:-no summary}"
 	grep -a '^  FAIL' "$VISUAL_LOG" | sed 's/^/          /' | head -n 12
+fi
+
+# ------------------------------------------------------- I. Wildlife AI tests ---
+section "I. Wildlife AI tests"
+WILDLIFE_LOG="$LOG_DIR/wildlife-tests.log"
+godot_run --headless --path "$ROOT" res://scenes/tests/wildlife_tests.tscn >"$WILDLIFE_LOG" 2>&1
+WILDLIFE_STATUS=$?
+project_errors "$WILDLIFE_LOG" >"$LOG_DIR/wildlife.errors"
+if [ "$WILDLIFE_STATUS" -eq 0 ]; then
+	pass "wildlife tests exited 0"
+elif [ "$WILDLIFE_STATUS" -eq 124 ]; then
+	fail "wildlife tests timed out after ${GODOT_TIMEOUT}s (the suite never exited)"
+	grep -a '^  '"$WILDLIFE_LOG" | sed 's/^/          /' | tail -n 8
+else
+	fail "wildlife tests exited $WILDLIFE_STATUS"
+fi
+if [ -s "$LOG_DIR/wildlife.errors" ]; then
+	fail "wildlife tests reported project errors"
+	show "$LOG_DIR/wildlife.errors"
+else
+	info "no project errors during wildlife tests"
+fi
+WILDLIFE_RESULT="$(grep -a '^RESULT:' "$WILDLIFE_LOG" | tail -n 1)"
+if [ -n "$WILDLIFE_RESULT" ]; then
+	info "$WILDLIFE_RESULT"
+else
+	fail "wildlife tests did not print a result summary"
+	show "$WILDLIFE_LOG" 30
+fi
+WILDLIFE_CHECKS="$(printf '%s' "$WILDLIFE_RESULT" | sed -n 's/^RESULT: \([0-9][0-9]*\) checks,.*/\1/p')"
+if [ -n "$WILDLIFE_CHECKS" ] && [ "$WILDLIFE_CHECKS" -ge 90 ]; then
+	pass "all $WILDLIFE_CHECKS wildlife AI checks reported"
+else
+	fail "wildlife suite is incomplete (${WILDLIFE_CHECKS:-0} checks reported, expected at least 90)"
+fi
+if printf '%s' "$WILDLIFE_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; then
+	pass "every wildlife AI check passed"
+else
+	fail "wildlife checks failed: ${WILDLIFE_RESULT:-no summary}"
+	grep -a '^  FAIL' "$WILDLIFE_LOG" | sed 's/^/          /' | head -n 12
 fi
 
 # ----------------------------------------------------------------- summary ---

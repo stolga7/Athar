@@ -65,11 +65,16 @@ scripts/visuals/forest.gd      Procedural tree variants, instanced placement, tr
 scripts/visuals/wilds_ground.gd  Ground material, backdrop, stones
 scripts/visuals/wilds_environment.gd  Sky, fog, sun and fill light
 scripts/ui/deer_marker.gd    Off-screen / distant deer cue
-scripts/animals/deer_ai.gd   Deer behaviour: states, detection, flight, stamina
+scripts/animals/deer_ai.gd      Deer behaviour: natural activity, alarm, flight
+scripts/animals/wildlife_profile.gd    Species blueprint + seeded temperament
+scripts/animals/wildlife_perception.gd Vision cone, hearing and threat memory
+scripts/animals/wildlife_steering.gd   Heading smoothing and obstacle avoidance
 scripts/gameplay/hunt_session.gd  One hunt: capture rule, counts, new-hunt cycle
 scripts/tests/hunting_tests.gd    Headless hunting and rig test suite
 scripts/tests/visual_tests.gd     Headless camera, forest and lighting test suite
+scripts/tests/wildlife_tests.gd   Headless behaviour, perception and AI test suite
 scripts/tools/capture_shots.gd    Renders review screenshots from the real scene
+scripts/tools/behaviour_shots.gd  Renders the deer in each behaviour state
 scripts/verify_project.sh    Automated verification (see TESTING.md)
 assets/                      Reserved for imported assets — currently empty
 icon.svg                     Project icon
@@ -97,8 +102,19 @@ README_AR.md                 Arabic project notes
 - A deer with a two-part neck, ears, tined antlers, a tail and four jointed legs
   (shoulder/hock). It stands and grazes naturally, and its pose changes per
   state, so an alerted or fleeing deer looks different from a grazing one.
-- Deer behaviour states: `GRAZING → ALERTED → FLEEING → ESCAPING`, then either
-  `CAPTURED` or back to `GRAZING` once it has broken away.
+- A deer that lives its own life: `GRAZING`, `WANDERING`, `OBSERVING` and
+  `RESTING` cycle on timers, and an alarm leads to `ALERTED`, then
+  `INVESTIGATING` for a distant noise or straight to `FLEEING`/`ESCAPING` for a
+  close one, with `RETURNING` before it relaxes back to grazing.
+- Senses instead of omniscience: a 300° field of view with trunk-line-of-sight
+  checks, proximity awareness inside 10 m, hearing that carries a sprinting
+  hunter about 18 m but a walking one only ~6 m, and ~6 s of threat memory so it
+  does not forget you the moment you step behind a tree.
+- Personality per animal, generated from the world seed: `steady`, `cautious`,
+  `bold` or `nervous`, shifting field of view, hearing, memory, patience and how
+  close you get before it commits to flight. Movement speeds are never varied.
+- Deer movement looks before it runs: smoothed turning and acceleration, and a
+  probe that steers it around trunks instead of into them.
 - Fair chase: the deer is faster in a short sprint and slower once tired, so a
   hunter who keeps pursuing closes the gap. See the numbers in `TESTING.md`.
 - Touch HUD: title, status line, stamina bar, direction pad, hunt button.
@@ -123,6 +139,11 @@ These are known and intentionally **not** changed in this baseline phase:
   Screenshots in `docs/screenshots/phase-3.1/` were rendered from the real scene
   with software Vulkan (Mesa lavapipe) on a Linux VM; they are evidence of what
   the code draws, not a substitute for playing it.
+- The deer does not drink: the world has no water body, and adding one is out of
+  scope for this phase. `DRINKING` is therefore not implemented rather than
+  simulated.
+- Scent, wind and tracks are not modelled; the animal senses by sight and sound
+  only. There is also no population system, so one deer exists at a time.
 - No Android device or emulator test has been run. Touch feel, on-device
   framerate and colour reproduction on a phone screen are unverified, and the
   draw-call/triangle counts in `TESTING.md` come from a software rasteriser, so
@@ -135,16 +156,19 @@ These are known and intentionally **not** changed in this baseline phase:
 ```
 
 Runs the headless checks — engine version, project import, GDScript parsing,
-startup, repository integrity, seed determinism, the hunting suite and the
-camera/visual suite — and exits non-zero if any of them fail. The hunting suite
-runs 66 checks and the visual suite 53; the script itself reports 56 checks,
-including both suites' verdicts. Full details in [TESTING.md](TESTING.md).
+startup, repository integrity, seed determinism, the hunting suite, the
+camera/visual suite and the wildlife AI suite — and exits non-zero if any of
+them fail. The hunting suite runs 66 checks, the visual suite 53 and the
+wildlife suite 100; the script itself reports 71 checks, including every suite's
+verdict. Full details in [TESTING.md](TESTING.md).
 
-Rendered screenshots (spawn view, deer at close range, chase, camera pinned
-against a trunk, horizon) are in
-[docs/screenshots/phase-3.1](docs/screenshots/phase-3.1/). They can be
-regenerated with `scripts/tools/capture_shots.gd` on any machine with a display;
-see section 7 of [TESTING.md](TESTING.md).
+Rendered screenshots are in [docs/screenshots](docs/screenshots/): the world
+views of Phase 3.1 (spawn, deer at close range, chase, camera pinned against a
+trunk, horizon) in `phase-3.1/`, and the deer's behaviour states (grazing,
+watching, alerted, fleeing, returning, resting) in `phase-3.2/`. They can be
+regenerated on any machine with a display using `scripts/tools/capture_shots.gd`
+and `scripts/tools/behaviour_shots.gd`; see section 7 of
+[TESTING.md](TESTING.md).
 
 ## License
 

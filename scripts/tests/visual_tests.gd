@@ -331,9 +331,13 @@ func _test_gameplay_preserved() -> void:
 	await get_tree().physics_frame
 	_check(hunter.global_position.distance_to(Vector3(trunk.x, 0.1, trunk.z - 1.0)) < 0.5, "trunks do not block the hunter", "walked through (from z=%.1f)" % blocked_before.z)
 
-	# The deer still notices and flees: the hunting loop is untouched.
+	# The deer still notices and flees: the hunting loop is untouched. Since
+	# Phase 3.2 detection also needs line of sight, this runs in the open
+	# clearing rather than next to the trunk the hunter just walked through.
 	_main.deer_ai.reset()
-	_main.deer.global_position = hunter.global_position + Vector3(0, 0, -9.0)
+	hunter.global_position = Vector3(0, 0.1, 0)
+	hunter.velocity = Vector3.ZERO
+	_main.deer.global_position = Vector3(0, 0.1, -9.0)
 	for _i in range(45):
 		await get_tree().physics_frame
 	_check(_main.deer_state in ["ALERTED", "FLEEING", "ESCAPING"], "deer still detects and reacts to the hunter", _main.deer_state)

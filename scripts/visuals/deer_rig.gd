@@ -44,6 +44,9 @@ var _neck_target := -1.1
 var _gait := 0.0
 var _breath := 0.0
 var _speed := 0.0
+## Grazing deer lift their head between bites; this drives that gesture.
+var _graze_clock := 0.0
+var _lift := 0.0
 
 
 func _ready() -> void:
@@ -160,6 +163,16 @@ func set_state(state: String) -> void:
 	match state:
 		"GRAZING":
 			_neck_target = -1.15
+		"WANDERING":
+			_neck_target = -0.55
+		"OBSERVING":
+			_neck_target = 0.12
+		"RESTING":
+			_neck_target = -0.28
+		"RETURNING":
+			_neck_target = -0.80
+		"INVESTIGATING":
+			_neck_target = 0.16
 		"ALERTED":
 			_neck_target = 0.22
 		"FLEEING", "ESCAPING":
@@ -180,40 +193,65 @@ func animate(delta: float, speed: float) -> void:
 	if gait > 0.02:
 		_gait += delta * TAU * STRIDE_HZ * (0.5 + 0.6 * gait)
 
-	_neck_angle = lerp_angle(_neck_angle, _neck_target, minf(1.0, delta * 6.0))
+	# Grazing deer stop chewing and lift their head every few seconds, then drop
+	# back to the grass. Purely a rhythm, no random numbers.
+	if _state == "GRAZING":
+		_graze_clock += delta
+		var cycle := fmod(_graze_clock, 9.0)
+		_lift = lerpf(_lift, 1.0 if cycle > 7.3 else 0.0, minf(1.0, delta * 2.6))
+	else:
+		_lift = lerpf(_lift, 0.0, minf(1.0, delta * 3.4))
+	var neck_target := _neck_target
+	if _state == "GRAZING":
+		neck_target = lerpf(_neck_target, -0.42, _lift)
+
+	_neck_angle = lerp_angle(_neck_angle, neck_target, minf(1.0, delta * 4.5))
 	_neck.rotation.x = _neck_angle
 	# Grazing deer nudge their head along the ground; alert deer hold it still.
 	if _state == "GRAZING":
 		_neck.rotation.x += sin(_breath * 0.9) * 0.09
-		_head.rotation.x = 0.55 + sin(_breath * 0.7) * 0.06
+		_head.rotation.x = lerpf(0.55 + sin(_breath * 0.7) * 0.06, 0.06, _lift)
+	elif _state == "OBSERVING":
+		# Slow scanning sweep: the animal is reading the treeline, not frozen.
+		_head.rotation.x = lerpf(_head.rotation.x, 0.02, delta * 3.0)
+		_head.rotation.y = sin(_breath * 0.38) * 0.34
+	elif _state == "RESTING":
+		_head.rotation.x = lerpf(_head.rotation.x, 0.14, delta * 2.4)
+		_head.rotation.y = lerpf(_head.rotation.y, 0.0, delta * 2.0)
 	else:
-		_head.rotation.x = lerpf(_head.rotation.x, 0.10 + (0.14 if _state == "ALERTED" else 0.0), delta * 5.0)
-	_head.rotation.y = sin(_breath * 0.6) * 0.10 * (1.0 - gait)
+		var pitch := 0.10 + (0.14 if _state == "ALERTED" else 0.0) + (0.05 if _state == "INVESTIGATING" else 0.0)
+		_head.rotation.x = lerpf(_head.rotation.x, pitch, delta * 5.0)
+		_head.rotation.y = sin(_breath * 0.6) * 0.10 * (1.0 - gait)
 
-	# Ears: relaxed at rest, pricked upright and forward when alerted or fleeing.
-	var ear_spread := 0.42 if _state in ["ALERTED", "FLEEING", "ESCAPING"] else 0.30
+	# Ears: relaxed at rest, pricked upright and forward when alert or fleeing.
+	var pricked := _state in ["ALERTED", "FLEEING", "ESCAPING", "INVESTIGATING"]
+	var ear_spread := 0.42 if pricked else 0.30
 	for i in range(_ears.size()):
 		var side := -1.0 if i == 0 else 1.0
 		_ears[i].rotation.z = -side * ear_spread
-		_ears[i].rotation.x = -0.25 if _state in ["ALERTED", "FLEEING", "ESCAPING"] else 0.0
+		_ears[i].rotation.x = -0.25 if pricked else 0.0
 
 	# Tail: low and flicking while grazing, flagged up when running away.
 	var tail_lift := 0.0
 	if _state in ["FLEEING", "ESCAPING"]:
 		tail_lift = 1.1
-	elif _state == "ALERTED":
+	elif _state == "ALERTED" or _state == "INVESTIGATING":
 		tail_lift = 0.45
 	_tail.rotation.x = lerpf(_tail.rotation.x, tail_lift, delta * 6.0)
 	_tail.rotation.y = sin(_breath * 2.2) * 0.25 * (1.0 - gait * 0.5)
 
-	# Four-beat walk that compresses into a bounding gallop at speed.
+	# Four-beat walk that compresses into a bounding gallop at speed. Even a slow
+	# walk keeps a visible stride, so a wandering deer never looks like it glides.
 	var offsets := [0.0, 0.55, PI, PI + 0.55]
-	var amplitude := lerpf(0.38, 0.95, gait)
-	var bounce := absf(sin(_gait)) * 0.075 * gait
+	var stride := gait
+	if speed > 0.15:
+		stride = maxf(gait, 0.32)
+	var amplitude := lerpf(0.34, 0.95, stride)
+	var bounce := absf(sin(_gait)) * 0.075 * stride
 	for i in range(_legs.size()):
 		var swing := sin(_gait + offsets[i])
-		_legs[i].rotation.x = _leg_rest[i] + swing * amplitude * gait
-		_knees[i].rotation.x = -_leg_rest[i] - 0.15 + maxf(0.0, swing) * 0.85 * gait
+		_legs[i].rotation.x = _leg_rest[i] + swing * amplitude * stride
+		_knees[i].rotation.x = -_leg_rest[i] - 0.15 + maxf(0.0, swing) * 0.85 * stride
 
 	_torso.rotation.x = sin(_gait) * 0.06 * gait
 	_body.position.y = 0.95 + bounce + sin(_breath) * 0.004 * (1.0 - gait)
