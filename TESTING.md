@@ -336,6 +336,51 @@ Temperaments (multipliers on the blueprint, `wildlife_profile.gd`):
 | bold | ×0.93 | ×0.92 | ×0.80 | ×0.85 | 0.74 × sight |
 | nervous | ×1.00 | ×1.18 | ×1.10 | ×1.15 | 0.86 × sight |
 
+### J. Living world tests
+Runs `scenes/tests/world_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/world_tests.tscn
+```
+
+Same contract as G–I: exit code 0, no project errors, a `RESULT:` summary with
+at least 85 checks, and `0 failed`. The clock and the weather are stepped
+directly at 60 Hz; the last groups load the real scene and drive the lighting,
+the shader parameters and the rain emitter by hand.
+
+| Area | What is asserted |
+|---|---|
+| Clock | advances with real time, wraps past midnight, reports every phase boundary, reads 12:00 at noon |
+| Daylight | noon reproduces the approved sun (1.55), ambient (1.00) and fog (0.0095); sunrise and sunset are warm twilight moments; moonlight is cool |
+| Night | full darkness still has moon light, an ambient floor, lifted exposure and a combined light budget above 0.7 |
+| Continuity | over 720 samples the sun energy never steps more than 0.05, ambient 0.03, fog colour 0.03, and no frame is unlit |
+| Weather | starts clear, changes at least three times in seven minutes, respects the hold time, only reports known conditions, rain only in rain, blends without snapping |
+| Conditions | rain dims and thickens, fog is thicker than rain and still leaves more than 20 m of visibility, conditions get progressively hazier |
+| Determinism | the same seed replays the same weather sequence, a different seed diverges |
+| Wildlife modifiers | clear midday is exactly 1.0; night lowers sight and raises hearing and memory; rain masks sound; every combination stays inside the fairness band |
+| Wildlife at night | a night-scaled deer is still catchable in 3–30 s, misses a hunter at 12 m and reacts at 10.5 m |
+| Scene | one bounded rain system that casts no shadow, wind shader on trees and grass, eight variants sharing one material, single shadow map, throttled environment updates |
+| Scene night and rain | night dims but never blacks out the light, the HUD clock moves, the deer's senses follow, rain emits and thickens fog, the ground looks wet and dries again |
+
+Living world values, all named constants:
+
+| Constant | Value | File |
+|---|---|---|
+| `SECONDS_PER_DAY` | 480 s | `day_cycle.gd` |
+| `START_TIME` | 0.5 (noon) | `day_cycle.gd` |
+| `MAX_SUN_ELEVATION` / `MOON_ELEVATION` | 44° / 38° | `day_cycle.gd` |
+| `DAY_SUN_ENERGY` / `MOON_ENERGY` / `TWILIGHT_ENERGY` | 1.55 / 0.55 / 0.80 | `day_cycle.gd` |
+| `DAY_AMBIENT_ENERGY` / `NIGHT_AMBIENT_ENERGY` | 1.00 / 0.92 | `day_cycle.gd` |
+| `DAY_EXPOSURE` / `NIGHT_EXPOSURE` | 1.45 / 1.72 | `day_cycle.gd` |
+| `TRANSITION_SECONDS` | 14 s | `weather.gd` |
+| `HOLD_MIN` / `HOLD_MAX` | 38 s / 85 s | `weather.gd` |
+| Fog multipliers (clear/cloudy/rain/fog) | 1.0 / 1.45 / 2.05 / 3.40 | `weather.gd` |
+| Sun multipliers (clear/cloudy/rain/fog) | 1.0 / 0.68 / 0.50 / 0.58 | `weather.gd` |
+| `PARTICLE_COUNT` | 700 | `rain.gd` |
+| `APPLY_INTERVAL` | 0.1 s | `living_world.gd` |
+| Wildlife vision floor / hearing floor | ×0.78 / ×0.72 | `living_world.gd` |
+| `WIND_STRENGTH` / wind strength in rain | 0.14 m / ×1.25 | `forest.gd`, `weather.gd` |
+
 ---
 
 ## 4. Reading the result
@@ -345,14 +390,14 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  71 checks, 0 failed
+  89 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Checks G, H and I are one line each here; the 66 hunting, 53 camera/visual and
-100 wildlife checks they gate are listed in full in `hunting-tests.log`,
-`visual-tests.log` and `wildlife-tests.log`, and summarised as
-`RESULT: <n> checks, 0 failed`.
+Checks G, H, I and J are one line each here; the 66 hunting, 53 camera/visual,
+100 wildlife and 95 living world checks they gate are listed in full in
+`hunting-tests.log`, `visual-tests.log`, `wildlife-tests.log` and
+`world-tests.log`, and summarised as `RESULT: <n> checks, 0 failed`.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -376,6 +421,8 @@ Useful log files:
 | `visual.errors` | project errors found in the visual run, after filtering |
 | `wildlife-tests.log` | the full wildlife AI suite output |
 | `wildlife.errors` | project errors found in the wildlife run, after filtering |
+| `world-tests.log` | the full living world suite output |
+| `world.errors` | project errors found in the living world run, after filtering |
 
 Intended workflow on failure:
 
@@ -517,3 +564,21 @@ project's own mobile/Forward+ renderer path on a CPU rasteriser. This is a
 developer convenience, not a supported configuration, and it is **not** part of
 `scripts/verify_project.sh` or CI: those run headless and must stay green on a
 machine with no display at all.
+
+### Living world screenshots
+
+`scenes/tools/world_shots.tscn` renders the same scene at different hours and in
+different weather:
+
+```bash
+godot --path . --rendering-driver vulkan res://scenes/tools/world_shots.tscn
+```
+
+It sets the clock and the weather on the real systems (not on the lights
+directly) and writes `artifacts/world_0*.png` for midday, sunset, night, rain and
+fog. The committed copies are in `docs/screenshots/phase-3.3/`.
+
+Measured mean frame luminance of the committed renders (0–1, software renderer):
+day 0.190, sunset 0.145, rain 0.145, fog 0.161, night 0.097. Night is the
+darkest by design, but it is not black: the hunter, the deer and the treeline all
+stay readable, which is the test the night lighting has to pass.

@@ -26,6 +26,12 @@ extends RefCounted
 ## reproduces the same forest exactly.
 
 const U := preload("res://scripts/visuals/rig_utils.gd")
+const WIND_SHADER := preload("res://shaders/vegetation_wind.gdshader")
+
+## Baseline sway in metres at the top of a crown, and how fast it oscillates.
+## The weather system scales these; these values are what a clear day uses.
+const WIND_STRENGTH := 0.14
+const WIND_SPEED := 1.15
 
 ## Trees to place, and the ring they are placed in. The inner radius keeps a
 ## playable clearing; the outer one stays inside the world bounds.
@@ -68,9 +74,10 @@ const LEAF_PALETTES: Array = [
 ## Builds the forest under `parent` and returns a summary used by the tests.
 static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 	var variants := _variants()
+	var foliage := _foliage_material()
 	var meshes: Array[ArrayMesh] = []
 	for i in range(variants.size()):
-		meshes.append(_variant_mesh(variants[i], i))
+		meshes.append(_variant_mesh(variants[i], i, foliage))
 
 	var spots: Array[Dictionary] = []
 	var attempts := 0
@@ -152,6 +159,7 @@ static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 		"collision_body": body,
 		"collision_shapes": body.get_child_count(),
 		"canopy_bottom": CANOPY_BOTTOM,
+		"material": foliage,
 	}
 
 
@@ -206,21 +214,24 @@ static func _instance_transform(spot: Dictionary) -> Transform3D:
 	return Transform3D(basis, spot["position"])
 
 
-## One shared material for every tree: the colour lives in the vertex data, so
-## all eight variants and all their instances are a single material state.
-static func _foliage_material() -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	# The baked colours are authored in sRGB, so tell the renderer to read them
-	# that way instead of treating them as linear.
-	mat.vertex_color_is_srgb = true
-	mat.roughness = 0.92
-	mat.metallic_specular = 0.15
+## One shared material for every tree: the colour lives in the vertex data and
+## the wind lives in a small vertex shader, so all eight variants and all their
+## instances are a single material state and a single wind update per frame.
+static func _foliage_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = WIND_SHADER
+	mat.set_shader_parameter("wind_strength", WIND_STRENGTH)
+	mat.set_shader_parameter("wind_speed", WIND_SPEED)
+	mat.set_shader_parameter("sway_start", 3.0)
+	mat.set_shader_parameter("sway_span", 4.5)
+	mat.set_shader_parameter("base_roughness", 0.92)
+	mat.set_shader_parameter("specular_amount", 0.15)
+	mat.set_shader_parameter("use_vertex_color", true)
 	return mat
 
 
 ## Builds one tree variant as a single vertex-coloured mesh.
-static func _variant_mesh(spec: Dictionary, index: int) -> ArrayMesh:
+static func _variant_mesh(spec: Dictionary, index: int, material: Material) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# Each variant jitters its crown from its own fixed seed, so the shape is
@@ -253,7 +264,7 @@ static func _variant_mesh(spec: Dictionary, index: int) -> ArrayMesh:
 		_broadleaf_crown(st, spec, palette, trunk_h, rng)
 
 	var mesh: ArrayMesh = st.commit()
-	mesh.surface_set_material(0, _foliage_material())
+	mesh.surface_set_material(0, material)
 	return mesh
 
 

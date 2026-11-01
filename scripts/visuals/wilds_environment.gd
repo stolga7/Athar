@@ -122,6 +122,10 @@ static func build(parent: Node3D) -> Dictionary:
 	return {
 		"world_environment": world_env,
 		"environment": env,
+		"sky_material": sky_material,
 		"sun": sun,
 		"fill": fill,
+		# Filled in by main.gd once the forest exists: the one material shared
+		# by every tree, whose wind strength the weather drives.
+		"foliage_material": null,
 	}

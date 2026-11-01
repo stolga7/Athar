@@ -184,6 +184,15 @@ func set_navigation_probe(probe: Callable) -> void:
 	_navigation_probe = probe
 
 
+## Re-scales sight, hearing and memory for the current environment (darkness,
+## rain, fog). The scene calls this only when the phase or weather changes, not
+## every frame. Clear midday passes 1.0 everywhere and changes nothing.
+func set_environment_modifiers(vision_scale: float, hearing_scale: float, memory_scale: float) -> void:
+	if profile == null:
+		return
+	profile.apply_environment(vision_scale, hearing_scale, memory_scale)
+
+
 ## Aligns the animal's look direction with its model. main.gd does not need it
 ## (the brain steers its own facing), but a scene or test that moves the animal
 ## by hand can keep perception pointing where the model points.

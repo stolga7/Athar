@@ -185,7 +185,7 @@ fi
 
 # ----------------------------------------------------- E. repository integrity
 section "E. Repository integrity"
-for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
+for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tests/world_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scenes/tools/world_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/world/day_cycle.gd scripts/world/weather.gd scripts/world/rain.gd scripts/world/living_world.gd scripts/tests/world_tests.gd scripts/tools/world_shots.gd shaders/vegetation_wind.gdshader scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
 	if [ -e "$ROOT/$required" ]; then
 		pass "$required present"
 	else
@@ -392,6 +392,46 @@ if printf '%s' "$WILDLIFE_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$
 else
 	fail "wildlife checks failed: ${WILDLIFE_RESULT:-no summary}"
 	grep -a '^  FAIL' "$WILDLIFE_LOG" | sed 's/^/          /' | head -n 12
+fi
+
+# --------------------------------------------------------- J. Living world ---
+section "J. Living world tests"
+WORLD_LOG="$LOG_DIR/world-tests.log"
+godot_run --headless --path "$ROOT" res://scenes/tests/world_tests.tscn >"$WORLD_LOG" 2>&1
+WORLD_STATUS=$?
+project_errors "$WORLD_LOG" >"$LOG_DIR/world.errors"
+if [ "$WORLD_STATUS" -eq 0 ]; then
+	pass "living world tests exited 0"
+elif [ "$WORLD_STATUS" -eq 124 ]; then
+	fail "living world tests timed out after ${GODOT_TIMEOUT}s (the suite never exited)"
+	grep -a '^  '"$WORLD_LOG" | sed 's/^/          /' | tail -n 8
+else
+	fail "living world tests exited $WORLD_STATUS"
+fi
+if [ -s "$LOG_DIR/world.errors" ]; then
+	fail "living world tests reported project errors"
+	show "$LOG_DIR/world.errors"
+else
+	info "no project errors during living world tests"
+fi
+WORLD_RESULT="$(grep -a '^RESULT:' "$WORLD_LOG" | tail -n 1)"
+if [ -n "$WORLD_RESULT" ]; then
+	info "$WORLD_RESULT"
+else
+	fail "living world tests did not print a result summary"
+	show "$WORLD_LOG" 30
+fi
+WORLD_CHECKS="$(printf '%s' "$WORLD_RESULT" | sed -n 's/^RESULT: \([0-9][0-9]*\) checks,.*/\1/p')"
+if [ -n "$WORLD_CHECKS" ] && [ "$WORLD_CHECKS" -ge 85 ]; then
+	pass "all $WORLD_CHECKS living world checks reported"
+else
+	fail "living world suite is incomplete (${WORLD_CHECKS:-0} checks reported, expected at least 85)"
+fi
+if printf '%s' "$WORLD_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; then
+	pass "every living world check passed"
+else
+	fail "living world checks failed: ${WORLD_RESULT:-no summary}"
+	grep -a '^  FAIL' "$WORLD_LOG" | sed 's/^/          /' | head -n 12
 fi
 
 # ----------------------------------------------------------------- summary ---

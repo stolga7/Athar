@@ -53,6 +53,13 @@ var confirm_distance := 10.6
 ## Sightings nearer than this while walking make the animal look, not run.
 var investigate_distance := 7.0
 
+## The clear-day values, kept so weather and darkness can scale the animal's
+## senses without ever drifting away from the tuned baseline.
+var base_vision_range := 13.0
+var base_hearing_range := 18.0
+var base_memory_time := 6.0
+var base_investigate_distance := 7.0
+
 
 ## Fills the profile from a species blueprint, then rolls one deterministic
 ## personality from `rng`. The same generator and seed always gives the same
@@ -67,6 +74,10 @@ func setup(species_name: String, blueprint: Dictionary, rng: RandomNumberGenerat
 	recovery_time = float(blueprint.get("recovery_time", recovery_time))
 	investigate_distance = float(blueprint.get("investigate_distance", investigate_distance))
 	_roll(rng)
+	base_vision_range = vision_range
+	base_hearing_range = hearing_range
+	base_memory_time = memory_time
+	base_investigate_distance = investigate_distance
 
 
 ## Chooses an archetype and shades its traits. Called once, at construction.
@@ -79,6 +90,18 @@ func _roll(rng: RandomNumberGenerator) -> void:
 	recovery_time = maxf(1.0, recovery_time * float(traits["recovery"]) * _jitter(rng))
 	confirm_distance = vision_range * float(traits["confirm"])
 	investigate_distance = minf(investigate_distance, confirm_distance - 1.0)
+
+
+## Scales the animal's senses for the current environment. Passing 1.0 for all
+## three restores the exact Phase 3.2 values, which is what clear midday does.
+func apply_environment(vision_scale: float, hearing_scale: float, memory_scale: float) -> void:
+	vision_range = base_vision_range * vision_scale
+	hearing_range = base_hearing_range * hearing_scale
+	memory_time = base_memory_time * memory_scale
+	# Keep the flight threshold proportional to sight, and the investigation
+	# stop short of it, so the two never cross.
+	confirm_distance = vision_range * float(TRAITS[archetype]["confirm"])
+	investigate_distance = minf(base_investigate_distance, confirm_distance - 1.0)
 
 
 func _jitter(rng: RandomNumberGenerator) -> float:

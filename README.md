@@ -64,6 +64,11 @@ scripts/visuals/camera_rig.gd  Follow camera: smoothing, shoulder offset, obstru
 scripts/visuals/forest.gd      Procedural tree variants, instanced placement, trunk colliders
 scripts/visuals/wilds_ground.gd  Ground material, backdrop, stones
 scripts/visuals/wilds_environment.gd  Sky, fog, sun and fill light
+scripts/world/day_cycle.gd       Clock: sun, sky, fog and exposure over a day
+scripts/world/weather.gd         Clear, cloudy, rain and fog, blended over time
+scripts/world/rain.gd            One bounded rain particle emitter
+scripts/world/living_world.gd    Binds clock, weather, wind and wildlife senses
+shaders/vegetation_wind.gdshader  Vertex wind for trees and grass
 scripts/ui/deer_marker.gd    Off-screen / distant deer cue
 scripts/animals/deer_ai.gd      Deer behaviour: natural activity, alarm, flight
 scripts/animals/wildlife_profile.gd    Species blueprint + seeded temperament
@@ -73,6 +78,7 @@ scripts/gameplay/hunt_session.gd  One hunt: capture rule, counts, new-hunt cycle
 scripts/tests/hunting_tests.gd    Headless hunting and rig test suite
 scripts/tests/visual_tests.gd     Headless camera, forest and lighting test suite
 scripts/tests/wildlife_tests.gd   Headless behaviour, perception and AI test suite
+scripts/tests/world_tests.gd      Headless clock, weather and living-world suite
 scripts/tools/capture_shots.gd    Renders review screenshots from the real scene
 scripts/tools/behaviour_shots.gd  Renders the deer in each behaviour state
 scripts/verify_project.sh    Automated verification (see TESTING.md)
@@ -113,6 +119,18 @@ README_AR.md                 Arabic project notes
 - Personality per animal, generated from the world seed: `steady`, `cautious`,
   `bold` or `nervous`, shifting field of view, hearing, memory, patience and how
   close you get before it commits to flight. Movement speeds are never varied.
+- A living world on a clock: an eight-minute day with smooth dawn, daylight,
+  sunset and night. Sun angle, colour, shadows, sky, fog and exposure all follow
+  the hour, and night keeps a cool moonlight floor so the hunt stays playable.
+- Weather that rolls in: clear, cloudy, rain and fog, eased over fourteen seconds
+  instead of snapped, with rain that dims the light, wets the ground and thickens
+  the air, and fog that swallows the distance without hiding the deer.
+- Wind in the shader: every tree and every grass tuft sways from a single vertex
+  shader driven by one shared parameter, so 138 trees cost two sin() calls per
+  vertex and no per-frame CPU work.
+- Wildlife that reads the weather: at night deer see a little less and hear more,
+  in rain their hearing is masked and they stay spooked longer, and all of it
+  stays inside a bounded band, so no weather makes the hunt unfair.
 - Deer movement looks before it runs: smoothed turning and acceleration, and a
   probe that steers it around trunks instead of into them.
 - Fair chase: the deer is faster in a short sprint and slower once tired, so a
@@ -127,6 +145,8 @@ These are known and intentionally **not** changed in this baseline phase:
 - All visuals are Godot primitives, not final art. `assets/` is empty: trees,
   ground and lighting are generated in code with no textures or models on disk.
 - One scene and one script; no separate actor/UI scenes, no autoloads, no audio.
+  The living world is silent on purpose: `assets/` is empty and the brief allows
+  environmental sound only from assets that already exist.
 - HUD text is English only; no Arabic font or right-to-left layout yet.
 - No `export_presets.cfg` and no Android build template, so the project cannot
   be exported to an APK as-is. Signing credentials are not part of this repo.
@@ -157,18 +177,19 @@ These are known and intentionally **not** changed in this baseline phase:
 
 Runs the headless checks — engine version, project import, GDScript parsing,
 startup, repository integrity, seed determinism, the hunting suite, the
-camera/visual suite and the wildlife AI suite — and exits non-zero if any of
-them fail. The hunting suite runs 66 checks, the visual suite 53 and the
-wildlife suite 100; the script itself reports 71 checks, including every suite's
-verdict. Full details in [TESTING.md](TESTING.md).
+camera/visual suite, the wildlife AI suite and the living world suite — and
+exits non-zero if any of them fail. The hunting suite runs 66 checks, the visual
+suite 53, the wildlife suite 100 and the living world suite 95; the script
+itself reports 89 checks, including every suite's verdict. Full details in
+[TESTING.md](TESTING.md).
 
 Rendered screenshots are in [docs/screenshots](docs/screenshots/): the world
 views of Phase 3.1 (spawn, deer at close range, chase, camera pinned against a
-trunk, horizon) in `phase-3.1/`, and the deer's behaviour states (grazing,
-watching, alerted, fleeing, returning, resting) in `phase-3.2/`. They can be
-regenerated on any machine with a display using `scripts/tools/capture_shots.gd`
-and `scripts/tools/behaviour_shots.gd`; see section 7 of
-[TESTING.md](TESTING.md).
+trunk, horizon) in `phase-3.1/`, the deer's behaviour states in `phase-3.2/`, and
+the living world of Phase 3.3 (day, sunset, night, rain, fog) in `phase-3.3/`.
+They can be regenerated on any machine with a display using
+`scripts/tools/capture_shots.gd`, `behaviour_shots.gd` and `world_shots.gd`; see
+section 7 of [TESTING.md](TESTING.md).
 
 ## License
 

@@ -18,6 +18,7 @@ const Forest := preload("res://scripts/visuals/forest.gd")
 const WildsGround := preload("res://scripts/visuals/wilds_ground.gd")
 const WildsEnvironment := preload("res://scripts/visuals/wilds_environment.gd")
 const DeerMarker := preload("res://scripts/ui/deer_marker.gd")
+const LivingWorld := preload("res://scripts/world/living_world.gd")
 
 const WORLD_SIZE := 90.0
 const GRAVITY := 20.0
@@ -43,6 +44,9 @@ var deer_collider: CollisionShape3D
 var camera: Camera3D
 var camera_rig: CameraRig
 var deer_marker: Control
+## Clock, weather, wind and rain. Owns the day/night and weather state and
+## pushes it into the environment, the ground and the deer's senses.
+var living_world: LivingWorld
 ## Summary dictionaries from the visual builders, used by the visual tests.
 var forest_info := {}
 var ground_info := {}
@@ -79,6 +83,7 @@ func _ready() -> void:
 	_build_hunter()
 	_build_deer()
 	_build_camera()
+	_build_living_world()
 	_build_hud()
 	deer_ai.state_changed.connect(_on_deer_state_changed)
 	hunt_session.deer_captured.connect(_on_deer_captured)
@@ -118,6 +123,8 @@ func _build_world() -> void:
 	world_rng.seed = randi()
 	ground_info = WildsGround.build(self, world_rng)
 	forest_info = Forest.build(self, world_rng)
+	# The weather shader drives the single tree material shared by every variant.
+	environment_info["foliage_material"] = forest_info.get("material", null)
 	# A small ruined stone arch gives the clearing a landmark.
 	_create_ruin(Vector3(-10, 0, -15))
 
@@ -186,6 +193,23 @@ func _build_camera() -> void:
 	camera_rig.ignore_bodies([hunter.get_rid(), deer.get_rid()])
 	camera_rig.snap_to(hunter.global_position, hunter.rotation.y)
 	camera = camera_rig.camera
+
+## Time, weather, wind and rain. Built after the world so it can drive the trees,
+## the ground and the lights that already exist.
+func _build_living_world() -> void:
+	living_world = LivingWorld.new()
+	living_world.setup(environment_info, ground_info, _active_seed())
+	_apply_wildlife_environment()
+
+
+## Pushes the current environment's sense multipliers into the deer. Called on
+## setup and whenever the phase or the weather label changes.
+func _apply_wildlife_environment() -> void:
+	if living_world == null or deer_ai == null:
+		return
+	var senses: Dictionary = living_world.wildlife_modifiers()
+	deer_ai.set_environment_modifiers(float(senses["vision"]), float(senses["hearing"]), float(senses["memory"]))
+
 
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
@@ -284,12 +308,16 @@ func _physics_process(delta: float) -> void:
 	hunter.global_position.x = clampf(hunter.global_position.x, -HUNTER_LIMIT, HUNTER_LIMIT)
 	hunter.global_position.z = clampf(hunter.global_position.z, -HUNTER_LIMIT, HUNTER_LIMIT)
 	hunter_rig.animate(delta, Vector2(hunter.velocity.x, hunter.velocity.z).length())
+	if living_world != null:
+		living_world.update(delta, hunter.global_position)
+		if living_world.consume_change():
+			_apply_wildlife_environment()
 	_update_deer(delta)
 	_check_capture()
 	camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
 	if deer_marker != null:
 		deer_marker.update_marker(camera, deer.global_position, deer.visible and not hunt_session.is_captured)
-	info_label.text = "STAMINA %d%%   •   FOREST REGION   •   DEER %s" % [int(stamina), deer_ai.activity_text().to_upper()]
+	info_label.text = "STAMINA %d%%   •   %s   •   DEER %s" % [int(stamina), living_world.hud_text(), deer_ai.activity_text().to_upper()]
 
 ## True when a trunk sits on the straight line from `from` to `to`. Only tree
 ## trunks (layer 2) and the ground (layer 1) count; the deer itself is excluded.

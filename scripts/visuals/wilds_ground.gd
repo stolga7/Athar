@@ -32,7 +32,15 @@ const GROUND_GRASS := Color(0.108, 0.138, 0.082)
 const GROUND_DRY := Color(0.140, 0.142, 0.094)
 
 const STONE_COUNT := 70
-const TUFT_COUNT := 420
+const TUFT_COUNT := 620
+
+const WIND_SHADER := preload("res://shaders/vegetation_wind.gdshader")
+## Grass sways much more than a trunk, and from the ground up.
+const TUFT_WIND_STRENGTH := 0.075
+const TUFT_WIND_SPEED := 1.5
+
+const TUFT_BASE := Color(0.088, 0.132, 0.068)
+const TUFT_TIP := Color(0.158, 0.216, 0.108)
 
 
 ## Adds the ground body, its surface and the clutter, and returns a summary.
@@ -72,13 +80,16 @@ static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 	parent.add_child(backdrop)
 
 	var stones := _stone_batch(parent, rng)
+	var tufts := _tuft_batch(parent, rng)
 
 	return {
 		"ground_body": ground_body,
 		"ground_surface": ground,
 		"material": ground.material_override,
 		"stone_count": stones,
-		"node_count": 2,
+		"tuft_count": int(tufts["count"]),
+		"tuft_material": tufts["material"],
+		"node_count": 3,
 	}
 
 
@@ -166,6 +177,85 @@ static func _stone_batch(parent: Node3D, rng: RandomNumberGenerator) -> int:
 	mmi.multimesh = mm
 	parent.add_child(mmi)
 	return transforms.size()
+
+
+## Grass clumps: three crossed tapered blades per tuft, one MultiMesh batch, no
+## shadows and no collision. They are ground detail at knee height; the wind
+## shader gives them the strongest sway in the scene because they are lightest.
+static func _tuft_batch(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
+	var mesh := _tuft_mesh()
+	var material := ShaderMaterial.new()
+	mesh.surface_set_material(0, material)
+	material.shader = WIND_SHADER
+	material.set_shader_parameter("wind_strength", TUFT_WIND_STRENGTH)
+	material.set_shader_parameter("wind_speed", TUFT_WIND_SPEED)
+	material.set_shader_parameter("sway_start", 0.02)
+	material.set_shader_parameter("sway_span", 0.55)
+	material.set_shader_parameter("base_roughness", 0.96)
+	material.set_shader_parameter("specular_amount", 0.05)
+	material.set_shader_parameter("use_vertex_color", true)
+
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	var transforms: Array[Transform3D] = []
+	while transforms.size() < TUFT_COUNT:
+		var x := rng.randf_range(-44.0, 44.0)
+		var z := rng.randf_range(-44.0, 44.0)
+		# Keep the hunter's spawn pocket and the ruin courtyard tidy.
+		if Vector2(x, z - 7.0).length() < 3.0:
+			continue
+		if Vector2(x + 10.0, z + 15.0).length() < 3.5:
+			continue
+		var basis := Basis(Vector3.UP, rng.randf() * TAU)
+		var s := rng.randf_range(0.75, 1.45)
+		basis = basis.scaled(Vector3(s, rng.randf_range(0.8, 1.3), s))
+		transforms.append(Transform3D(basis, Vector3(x, 0.0, z)))
+	mm.instance_count = transforms.size()
+	for i in range(transforms.size()):
+		mm.set_instance_transform(i, transforms[i])
+
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "GrassTufts"
+	mmi.multimesh = mm
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mmi)
+	return {"count": transforms.size(), "material": material}
+
+
+## One tuft: three tapered quads crossed at 60 degrees, dark at the root and
+## greener at the tip so the clump reads as grass rather than a spike.
+static func _tuft_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for blade in range(3):
+		var angle := float(blade) * PI / 3.0 + 0.35
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var side := Vector3(-dir.z, 0.0, dir.x) * 0.048
+		var lean := dir * 0.05
+		var base := -side
+		var base_r := side
+		var tip_l := -side * 0.35 + lean + Vector3(0, 0.235, 0)
+		var tip_r := side * 0.35 + lean + Vector3(0, 0.235, 0)
+		_quad(st, base, base_r, tip_r, tip_l, TUFT_BASE, TUFT_TIP)
+	st.generate_normals()
+	return st.commit()
+
+
+## `a`/`b` are the root corners, `c`/`d` the tip corners.
+static func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, bottom: Color, top: Color) -> void:
+	st.set_color(bottom)
+	st.add_vertex(a)
+	st.set_color(bottom)
+	st.add_vertex(b)
+	st.set_color(top)
+	st.add_vertex(c)
+	st.set_color(bottom)
+	st.add_vertex(a)
+	st.set_color(top)
+	st.add_vertex(c)
+	st.set_color(top)
+	st.add_vertex(d)
 
 
 static func _mossy_mesh(radius: float, segments: int, rings: int) -> SphereMesh:
