@@ -185,7 +185,7 @@ fi
 
 # ----------------------------------------------------- E. repository integrity
 section "E. Repository integrity"
-for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tests/world_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scenes/tools/world_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/world/day_cycle.gd scripts/world/weather.gd scripts/world/rain.gd scripts/world/living_world.gd scripts/tests/world_tests.gd scripts/tools/world_shots.gd shaders/vegetation_wind.gdshader scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
+for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tests/world_tests.tscn scenes/tests/audio_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scenes/tools/world_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/world/day_cycle.gd scripts/world/weather.gd scripts/world/rain.gd scripts/world/living_world.gd scripts/tests/world_tests.gd scripts/tests/audio_tests.gd scripts/tools/world_shots.gd scripts/audio/audio_director.gd scripts/audio/audio_settings.gd scripts/ui/audio_panel.gd audio/default_bus_layout.tres tools/generate_audio.py assets/audio/LICENSE.txt shaders/vegetation_wind.gdshader scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
 	if [ -e "$ROOT/$required" ]; then
 		pass "$required present"
 	else
@@ -432,6 +432,68 @@ if printf '%s' "$WORLD_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; 
 else
 	fail "living world checks failed: ${WORLD_RESULT:-no summary}"
 	grep -a '^  FAIL' "$WORLD_LOG" | sed 's/^/          /' | head -n 12
+fi
+
+# ------------------------------------------------------------- K. Audio ------
+section "K. Audio"
+AUDIO_LOG="$LOG_DIR/audio-tests.log"
+godot_run --headless --path "$ROOT" res://scenes/tests/audio_tests.tscn >"$AUDIO_LOG" 2>&1
+AUDIO_STATUS=$?
+project_errors "$AUDIO_LOG" >"$LOG_DIR/audio.errors"
+if [ "$AUDIO_STATUS" -eq 0 ]; then
+	pass "audio tests exited 0"
+elif [ "$AUDIO_STATUS" -eq 124 ]; then
+	fail "audio tests timed out after ${GODOT_TIMEOUT}s (the suite never exited)"
+	grep -a '^  '"$AUDIO_LOG" | sed 's/^/          /' | tail -n 8
+else
+	fail "audio tests exited $AUDIO_STATUS"
+fi
+if [ -s "$LOG_DIR/audio.errors" ]; then
+	fail "audio tests reported project errors"
+	show "$LOG_DIR/audio.errors"
+else
+	info "no project errors during audio tests"
+fi
+AUDIO_RESULT="$(grep -a '^RESULT:' "$AUDIO_LOG" | tail -n 1)"
+if [ -n "$AUDIO_RESULT" ]; then
+	info "$AUDIO_RESULT"
+else
+	fail "audio tests did not print a result summary"
+	show "$AUDIO_LOG" 30
+fi
+AUDIO_CHECKS="$(printf '%s' "$AUDIO_RESULT" | sed -n 's/^RESULT: \([0-9][0-9]*\) checks,.*/\1/p')"
+if [ -n "$AUDIO_CHECKS" ] && [ "$AUDIO_CHECKS" -ge 80 ]; then
+	pass "all $AUDIO_CHECKS audio checks reported"
+else
+	fail "audio suite is incomplete (${AUDIO_CHECKS:-0} checks reported, expected at least 80)"
+fi
+if printf '%s' "$AUDIO_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; then
+	pass "every audio check passed"
+else
+	fail "audio checks failed: ${AUDIO_RESULT:-no summary}"
+	grep -a '^  FAIL' "$AUDIO_LOG" | sed 's/^/          /' | head -n 12
+fi
+
+# The game must not reference a sound that is not in the repository.
+MISSING_SOUNDS=0
+for sound in $(grep -aoE 'res://assets/audio/[a-z0-9_]+\.wav' "$ROOT/scripts/audio/audio_director.gd" | sort -u); do
+	if [ ! -e "$ROOT/${sound#res://}" ]; then
+		fail "the game plays $sound but the file does not exist"
+		MISSING_SOUNDS=$((MISSING_SOUNDS + 1))
+	fi
+done
+if [ "$MISSING_SOUNDS" -eq 0 ]; then
+	pass "every referenced sound file exists"
+fi
+if grep -aq '^buses/default_bus_layout=' "$ROOT/project.godot" && [ -e "$ROOT/audio/default_bus_layout.tres" ]; then
+	pass "the audio bus layout is registered and present"
+else
+	fail "the audio bus layout is missing or unregistered"
+fi
+if grep -aq 'generate_audio.py' "$ROOT/assets/audio/LICENSE.txt" 2>/dev/null; then
+	pass "the audio provenance note ships with the project"
+else
+	fail "the audio provenance note is missing"
 fi
 
 # ----------------------------------------------------------------- summary ---

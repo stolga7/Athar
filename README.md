@@ -41,6 +41,7 @@ git-ignored.
 | Move | Four on-screen direction buttons, bottom-left | `W` `A` `S` `D` or arrow keys |
 | Capture | `HUNT / TRACK` button, bottom-right — captures when the deer is within 1.8 m | — (touch button only) |
 | New hunt | The same button, relabelled `NEW HUNT` after a capture | — (touch button only) |
+| Volume / mute | `AUDIO` button, top-right: master, music and effects sliders plus mute | same button (mouse) |
 
 The on-screen buttons drive the `move_forward`, `move_back`, `move_left` and
 `move_right` input actions. Those actions are declared in `project.godot` with
@@ -70,6 +71,13 @@ scripts/world/rain.gd            One bounded rain particle emitter
 scripts/world/living_world.gd    Binds clock, weather, wind and wildlife senses
 shaders/vegetation_wind.gdshader  Vertex wind for trees and grass
 scripts/ui/deer_marker.gd    Off-screen / distant deer cue
+scripts/ui/audio_panel.gd    Volume sliders and mute, top-right corner
+scripts/audio/audio_director.gd  Beds, one-shot pool, footsteps and 3D animal audio
+scripts/audio/audio_settings.gd  Master/music/effects volumes and mute, persisted
+scripts/tests/audio_tests.gd      Headless audio asset, bus, settings and wiring suite
+tools/generate_audio.py      Regenerates every sound file in assets/audio
+assets/audio/                The game's own generated WAVs + LICENSE.txt (provenance)
+audio/default_bus_layout.tres  Master/Music/SFX bus layout
 scripts/animals/deer_ai.gd      Deer behaviour: natural activity, alarm, flight
 scripts/animals/wildlife_profile.gd    Species blueprint + seeded temperament
 scripts/animals/wildlife_perception.gd Vision cone, hearing and threat memory
@@ -82,7 +90,6 @@ scripts/tests/world_tests.gd      Headless clock, weather and living-world suite
 scripts/tools/capture_shots.gd    Renders review screenshots from the real scene
 scripts/tools/behaviour_shots.gd  Renders the deer in each behaviour state
 scripts/verify_project.sh    Automated verification (see TESTING.md)
-assets/                      Reserved for imported assets — currently empty
 icon.svg                     Project icon
 README_AR.md                 Arabic project notes
 ```
@@ -135,6 +142,14 @@ README_AR.md                 Arabic project notes
   probe that steers it around trunks instead of into them.
 - Fair chase: the deer is faster in a short sprint and slower once tired, so a
   hunter who keeps pursuing closes the gap. See the numbers in `TESTING.md`.
+- Sound from a bus layout with music and effects sub-buses and a master: forest
+  ambience that cross-fades between day and night, wind and distant birds, rain
+  tied to the weather, hunter footsteps that change with the surface (stone in
+  the ruin, grass and soil elsewhere), deer hoofbeats, a warning snort and a
+  flight call that are positional (`AudioStreamPlayer3D` on the animal, so
+  distance and direction are the engine's), a capture chime, a quiet interface
+  tap and a slow ambient pad. Volume and mute live in an `AUDIO` panel and are
+  saved to `user://audio_settings.cfg`.
 - Touch HUD: title, status line, stamina bar, direction pad, hunt button.
 - Repeatable hunt loop: approach, alert, chase, capture, then `NEW HUNT`.
 
@@ -142,15 +157,24 @@ README_AR.md                 Arabic project notes
 
 These are known and intentionally **not** changed in this baseline phase:
 
-- All visuals are Godot primitives, not final art. `assets/` is empty: trees,
-  ground and lighting are generated in code with no textures or models on disk.
-- One scene and one script; no separate actor/UI scenes, no autoloads, no audio.
-  The living world is silent on purpose: `assets/` is empty and the brief allows
-  environmental sound only from assets that already exist.
+- All visuals are Godot primitives, not final art: trees, ground and lighting
+  are generated in code with no textures or models on disk.
+- One scene and one script; no separate actor/UI scenes and no autoloads.
+- The audio is synthesised, not recorded: `tools/generate_audio.py` produces
+  every WAV from sine waves and filtered noise, so there is nothing to license
+  and nothing borrowed — but also no field recording, and an ambience built from
+  noise layers is simpler than a real forest. See `assets/audio/LICENSE.txt`.
+- No audio could be listened to during development: every check runs headlessly
+  on the dummy audio driver, so the suites verify assets, buses, volumes, player
+  state and wiring, not how it sounds. Mix levels are judgement calls that need
+  an owner's ear on a phone.
+- The only interactive sound the world offers is the hunt itself; there is no
+  menu music or stingers because there is no menu beyond the audio panel.
 - HUD text is English only; no Arabic font or right-to-left layout yet.
 - No `export_presets.cfg` and no Android build template, so the project cannot
   be exported to an APK as-is. Signing credentials are not part of this repo.
-- No save system, settings, pause menu or localized strings.
+- No save system, pause menu or localized strings. Settings exist only for audio
+  (`user://audio_settings.cfg`); nothing else is persisted.
 - World layout uses a random generator; pass `--seed=<int>` (or set `ATHAR_SEED`)
   to reproduce a layout, otherwise each run differs. See `TESTING.md`.
 - The hunter and deer are assembled from primitives by code. Their proportions
@@ -177,11 +201,11 @@ These are known and intentionally **not** changed in this baseline phase:
 
 Runs the headless checks — engine version, project import, GDScript parsing,
 startup, repository integrity, seed determinism, the hunting suite, the
-camera/visual suite, the wildlife AI suite and the living world suite — and
-exits non-zero if any of them fail. The hunting suite runs 66 checks, the visual
-suite 53, the wildlife suite 100 and the living world suite 95; the script
-itself reports 89 checks, including every suite's verdict. Full details in
-[TESTING.md](TESTING.md).
+camera/visual suite, the wildlife AI suite, the living world suite and the audio
+suite — and exits non-zero if any of them fail. The hunting suite runs 66
+checks, the visual suite 53, the wildlife suite 100, the living world suite 95
+and the audio suite 86; the script itself reports 107 checks, including every
+suite's verdict. Full details in [TESTING.md](TESTING.md).
 
 Rendered screenshots are in [docs/screenshots](docs/screenshots/): the world
 views of Phase 3.1 (spawn, deer at close range, chase, camera pinned against a

@@ -49,6 +49,14 @@ func _ready() -> void:
 
 func _finish() -> void:
 	_watchdog.stop()
+	# Phase 3.4: the scene under test plays audio. Stop it, let the scene go and
+	# give the audio thread a moment, or Godot reports in-flight streams as leaked.
+	_silence_audio(get_tree().root)
+	if is_instance_valid(_main):
+		_main.free()
+	_main = null
+	OS.delay_msec(250)
+	await get_tree().process_frame
 	print("")
 	if _failures > 0:
 		print("RESULT: %d checks, %d failed" % [_checks, _failures])
@@ -56,6 +64,15 @@ func _finish() -> void:
 	else:
 		print("RESULT: %d checks, 0 failed" % _checks)
 		get_tree().quit(0)
+
+
+func _silence_audio(node: Node) -> void:
+	if node is AudioStreamPlayer:
+		(node as AudioStreamPlayer).stop()
+	elif node is AudioStreamPlayer3D:
+		(node as AudioStreamPlayer3D).stop()
+	for child in node.get_children():
+		_silence_audio(child)
 
 
 func _on_watchdog_timeout() -> void:

@@ -53,6 +53,17 @@ func _ready() -> void:
 
 func _finish() -> void:
 	_watchdog.stop()
+	# Phase 3.4: the scene under test plays audio. Stop it, let the scene go (it
+	# keeps walking, and a walking deer keeps making hoofbeats), then let the
+	# mixer notice before quitting; an in-flight stream is reported as leaked.
+	_silence_audio(get_tree().root)
+	if _main != null:
+		_main.free()
+		_main = null
+	# The audio server mixes on its own thread; a short real-time sleep lets it
+	# release the stopped playbacks before the engine shuts down.
+	OS.delay_msec(250)
+	await get_tree().process_frame
 	print("")
 	if _failures > 0:
 		print("RESULT: %d checks, %d failed" % [_checks, _failures])
@@ -60,6 +71,15 @@ func _finish() -> void:
 	else:
 		print("RESULT: %d checks, 0 failed" % _checks)
 		get_tree().quit(0)
+
+
+func _silence_audio(node: Node) -> void:
+	if node is AudioStreamPlayer:
+		(node as AudioStreamPlayer).stop()
+	elif node is AudioStreamPlayer3D:
+		(node as AudioStreamPlayer3D).stop()
+	for child in node.get_children():
+		_silence_audio(child)
 
 
 func _on_watchdog_timeout() -> void:
@@ -79,6 +99,11 @@ func _check(condition: bool, label: String, detail := "") -> void:
 
 func _load_main() -> void:
 	if _main != null:
+		_silence_audio(_main)
+		# Give the mixer a few frames to release the stopped streams before the
+		# players are freed with the scene.
+		for _i in range(3):
+			await get_tree().process_frame
 		_main.queue_free()
 		await get_tree().process_frame
 	_main = MAIN_SCENE.instantiate()

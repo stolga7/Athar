@@ -19,6 +19,9 @@ const WildsGround := preload("res://scripts/visuals/wilds_ground.gd")
 const WildsEnvironment := preload("res://scripts/visuals/wilds_environment.gd")
 const DeerMarker := preload("res://scripts/ui/deer_marker.gd")
 const LivingWorld := preload("res://scripts/world/living_world.gd")
+const AudioSettings := preload("res://scripts/audio/audio_settings.gd")
+const AudioDirector := preload("res://scripts/audio/audio_director.gd")
+const AudioPanel := preload("res://scripts/ui/audio_panel.gd")
 
 const WORLD_SIZE := 90.0
 const GRAVITY := 20.0
@@ -47,6 +50,13 @@ var deer_marker: Control
 ## Clock, weather, wind and rain. Owns the day/night and weather state and
 ## pushes it into the environment, the ground and the deer's senses.
 var living_world: LivingWorld
+## Sound: ambience, footsteps, animal calls, capture cue and the volume panel.
+var audio: AudioDirector
+var audio_settings: RefCounted
+var audio_panel: Control
+var hud_root: Control
+## Planar speed of each actor, used for footstep timing.
+var deer_speed := 0.0
 ## Summary dictionaries from the visual builders, used by the visual tests.
 var forest_info := {}
 var ground_info := {}
@@ -85,6 +95,7 @@ func _ready() -> void:
 	_build_camera()
 	_build_living_world()
 	_build_hud()
+	_build_audio()
 	deer_ai.state_changed.connect(_on_deer_state_changed)
 	hunt_session.deer_captured.connect(_on_deer_captured)
 	_update_status("Find the deer. Move quietly through the forest.")
@@ -207,6 +218,7 @@ func _build_living_world() -> void:
 func _apply_wildlife_environment() -> void:
 	if living_world == null or deer_ai == null:
 		return
+	_sync_audio_environment()
 	var senses: Dictionary = living_world.wildlife_modifiers()
 	deer_ai.set_environment_modifiers(float(senses["vision"]), float(senses["hearing"]), float(senses["memory"]))
 
@@ -217,6 +229,7 @@ func _build_hud() -> void:
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(root)
+	hud_root = root
 	var title := Label.new()
 	title.text = "ATHAR  |  WILDLANDS"
 	title.position = Vector2(26, 18)
@@ -262,6 +275,33 @@ func _build_hud() -> void:
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(0.86, 0.86, 0.76))
 	root.add_child(hint)
+
+## Sound. Built after the HUD so the volume panel can live in it, and after the
+## deer exists so its voice can be attached to it in 3D.
+func _build_audio() -> void:
+	audio_settings = AudioSettings.new()
+	audio_settings.load_settings()
+	audio = AudioDirector.new()
+	audio.name = "AudioDirector"
+	add_child(audio)
+	audio.setup(audio_settings)
+	audio.attach_deer(deer)
+	audio_panel = AudioPanel.new()
+	audio_panel.name = "AudioSettings"
+	hud_root.add_child(audio_panel)
+	audio_panel.setup(audio_settings)
+	_sync_audio_environment()
+
+
+## Hands the current hour and weather to the audio beds. Called on setup and
+## whenever the phase or weather changes, not every frame.
+func _sync_audio_environment() -> void:
+	if audio == null or living_world == null:
+		return
+	var day: Dictionary = living_world.day.sample()
+	var weather: Dictionary = living_world.weather.sample()
+	audio.set_environment(float(day["night"]), float(weather["rain"]), float(weather["wind"]))
+
 
 func _button_style(color: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -314,6 +354,8 @@ func _physics_process(delta: float) -> void:
 			_apply_wildlife_environment()
 	_update_deer(delta)
 	_check_capture()
+	if audio != null:
+		audio.update(delta, hunter.global_position, Vector2(hunter.velocity.x, hunter.velocity.z).length(), deer.global_position, deer_speed)
 	camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
 	if deer_marker != null:
 		deer_marker.update_marker(camera, deer.global_position, deer.visible and not hunt_session.is_captured)
@@ -341,6 +383,7 @@ func _update_deer(delta: float) -> void:
 	deer.velocity.x = desired.x
 	deer.velocity.z = desired.z
 	var planar := Vector2(desired.x, desired.z).length()
+	deer_speed = planar
 	if planar > 0.05:
 		deer.rotation.y = lerp_angle(deer.rotation.y, atan2(-desired.x, -desired.z), delta * 6.0)
 	deer.velocity.y -= GRAVITY * delta
@@ -359,6 +402,8 @@ func _check_capture() -> void:
 	hunt_session.try_capture(distance)
 
 func _on_deer_captured() -> void:
+	if audio != null:
+		audio.play_capture()
 	deer_ai.capture()
 	deer_rig.set_state(DeerAI.CAPTURED)
 	deer.velocity = Vector3.ZERO
@@ -371,10 +416,14 @@ func _on_deer_state_changed(previous: String, current: String) -> void:
 	match current:
 		DeerAI.ALERTED:
 			_update_status("The deer lifts its head — it has noticed you. Hold still.")
+			if audio != null:
+				audio.play_deer_alert()
 		DeerAI.INVESTIGATING:
 			_update_status("It is edging closer to look. Do not move yet.")
 		DeerAI.FLEEING:
 			_update_status("It bolted! Chase now — it will tire before you do.")
+			if audio != null:
+				audio.play_deer_flee()
 		DeerAI.ESCAPING:
 			_update_status("The deer is tiring. Keep the pressure on and close the gap.")
 		DeerAI.RETURNING:
@@ -396,6 +445,8 @@ func _set_deer_collision(enabled: bool) -> void:
 	deer.set_deferred("collision_mask", 1 if enabled else 0)
 
 func _on_hunt_pressed() -> void:
+	if audio != null:
+		audio.play_ui_tap()
 	if hunt_session.is_captured:
 		_start_new_hunt()
 		return

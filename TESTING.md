@@ -383,6 +383,45 @@ Living world values, all named constants:
 
 ---
 
+### K. Audio tests
+Runs `scenes/tests/audio_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/audio_tests.tscn
+```
+
+Same contract as G–J: exit code 0, no project errors, a `RESULT:` summary with
+at least 80 checks, and `0 failed`. The suite also reads the shipped WAV headers
+directly, because the importer re-encodes them.
+
+| Area | What is asserted |
+|---|---|
+| Files | all 17 sounds exist, load as streams, sit under 3 MB, use the documented sample rates, and no bed is shorter than its loop |
+| Levels | no file clips, none is silent, the interface tap and a footstep stay under 0.3 s |
+| Provenance | `assets/audio/LICENSE.txt` ships with the project and states the audio is generated, not borrowed |
+| Import | long beds are compressed on import rather than held as raw PCM |
+| Buses | Master, Music and SFX exist and both sub-buses send to Master |
+| Settings | defaults, clamping, the effects bus following the slider, mute muting the Master bus, unmute restoring the level |
+| Persistence | save → new instance → load round-trip of volumes and mute, a missing file falling back to defaults, `reset()` restoring them |
+| Director | 8–12 players total, both ambience beds running for cross-fade, loop flags set, music at least 12 dB under the effects, rain fading in with the weather, night taking over from day |
+| Footsteps | silence while standing, steps while walking, stone inside the ruin and grass/soil outside, a fixed reused pool |
+| 3D | the deer owns inverse-distance players with a bounded range and panning, the snort and flight call fire at its position, hooves stop with the animal |
+| Scene | the panel exists with three sliders and mute, starts collapsed, opens and closes, slider and mute changes reach the settings, weather reaches the rain bed, the live deer's snort is audible, the button taps, and capture still captures |
+
+Audio values, all named constants in `scripts/audio/audio_director.gd`:
+
+| Constant | Value |
+|---|---|
+| `AMBIENCE_DAY_DB` / `AMBIENCE_NIGHT_DB` | −15 / −14 dB |
+| `RAIN_DB` / `MUSIC_DB` | −11 / −17 dB |
+| `STEP_DB` / `HOOF_DB` / `VOICE_DB` / `SFX_DB` | −9 / −13 / −7 / −8 dB |
+| `STEP_INTERVAL` / `DEER_RUN_INTERVAL` | 0.33 s / 0.22 s |
+| `AUDIBLE_RANGE` | 42 m |
+| `SFX_POOL_SIZE` | 4 players |
+| Default master / music / effects | 0.9 / 0.55 / 0.85 |
+
+---
+
 ## 4. Reading the result
 
 Each check prints `PASS` or `FAIL`, failures print the exact diagnostic lines
@@ -390,14 +429,15 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  89 checks, 0 failed
+  107 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Checks G, H, I and J are one line each here; the 66 hunting, 53 camera/visual,
-100 wildlife and 95 living world checks they gate are listed in full in
-`hunting-tests.log`, `visual-tests.log`, `wildlife-tests.log` and
-`world-tests.log`, and summarised as `RESULT: <n> checks, 0 failed`.
+Checks G, H, I, J and K are one line each here; the 66 hunting, 53
+camera/visual, 100 wildlife, 95 living world and 86 audio checks they gate are
+listed in full in `hunting-tests.log`, `visual-tests.log`, `wildlife-tests.log`,
+`world-tests.log` and `audio-tests.log`, and summarised as
+`RESULT: <n> checks, 0 failed`.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -423,6 +463,8 @@ Useful log files:
 | `wildlife.errors` | project errors found in the wildlife run, after filtering |
 | `world-tests.log` | the full living world suite output |
 | `world.errors` | project errors found in the living world run, after filtering |
+| `audio-tests.log` | the full audio suite output |
+| `audio.errors` | project errors found in the audio run, after filtering |
 
 Intended workflow on failure:
 
@@ -458,9 +500,18 @@ These are honest gaps. None of them makes the automated run green by default.
   the project is even read, and are excluded by name in
   `IGNORE_PATTERNS`. The filter is a narrow allowlist — any other error still
   fails the run.
-- **No audio, input, or touch verification.** There is no audio device, and
-  button presses cannot be delivered headlessly. The hunt button, touch pads,
-  and HUD interactions are exercised only by the scene being built.
+- **Sound cannot be heard in this environment.** There is no audio device, so
+  every run falls back to Godot's dummy audio driver
+  (`All audio drivers failed, falling back to the dummy driver`). The audio suite
+  therefore verifies that the files exist and decode, that the buses and volumes
+  are configured, which players are started, stopped and reused, that positional
+  nodes are set up, and that gameplay events reach the director — never that a
+  sound is pleasant, audible on a phone speaker, or correctly balanced. That
+  needs a human ear on a device.
+- **Input and touch are simulated.** There is no audio device and button presses
+  cannot be delivered headlessly. The hunt button, the audio panel, the touch
+  pads and the HUD interactions are exercised by emitting their signals
+  directly. Touch event plumbing itself is unverified.
 - **Balance is asserted, art is not.** The hunting suite encodes the agreed
   chase targets (sprint outruns the hunter, tired deer does not, capture inside
   3–30 s). It says nothing about whether the models *look* good, and no

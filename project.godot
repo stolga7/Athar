@@ -45,3 +45,6 @@ renderer/rendering_method="mobile"
 renderer/rendering_method.mobile="mobile"
 environment/defaults/default_clear_color=Color(0.035, 0.055, 0.045, 1)
 textures/default_filters/use_nearest_mipmap_filter=false
+
+[audio]
+buses/default_bus_layout="res://audio/default_bus_layout.tres"
