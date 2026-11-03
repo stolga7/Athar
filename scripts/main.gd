@@ -17,11 +17,17 @@ const CameraRig := preload("res://scripts/visuals/camera_rig.gd")
 const Forest := preload("res://scripts/visuals/forest.gd")
 const WildsGround := preload("res://scripts/visuals/wilds_ground.gd")
 const WildsEnvironment := preload("res://scripts/visuals/wilds_environment.gd")
-const DeerMarker := preload("res://scripts/ui/deer_marker.gd")
 const LivingWorld := preload("res://scripts/world/living_world.gd")
-const AudioSettings := preload("res://scripts/audio/audio_settings.gd")
 const AudioDirector := preload("res://scripts/audio/audio_director.gd")
-const AudioPanel := preload("res://scripts/ui/audio_panel.gd")
+const GameSettings := preload("res://scripts/settings/game_settings.gd")
+const GraphicsProfile := preload("res://scripts/settings/graphics_profile.gd")
+const Localization := preload("res://scripts/ui/localization.gd")
+const UiKit := preload("res://scripts/ui/ui_kit.gd")
+const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
+const MAIN_MENU_SCENE := preload("res://scenes/ui/main_menu.tscn")
+const PAUSE_MENU_SCENE := preload("res://scenes/ui/pause_menu.tscn")
+const SETTINGS_MENU_SCENE := preload("res://scenes/ui/settings_menu.tscn")
+const CONFIRM_SCENE := preload("res://scenes/ui/confirm_prompt.tscn")
 
 const WORLD_SIZE := 90.0
 const GRAVITY := 20.0
@@ -66,12 +72,32 @@ var info_label: Label
 var move_vector := Vector2.ZERO
 var stamina := 100.0
 var hunt_button: Button
+## The HUD scene, its layer, and the menu layer that sits above it.
+var hud: Control
+var hud_layer: CanvasLayer
+var menu_layer: CanvasLayer
+var main_menu: Control
+var pause_menu: Control
+var settings_menu: Control
+var confirm_prompt: Control
+## Screen-space direction asked for by the movement pad, -1..1 per axis.
+var joystick_vector := Vector2.ZERO
+## "playing" or "menu". The menu states freeze the simulation instead of pausing
+## the tree, so timers, audio and the menus themselves keep running.
+var game_state := STATE_PLAYING
+var pending_action := ""
+var settings_opened_from_main := false
+var _hunt_abandoned := false
+var _suppress_settings_closed := false
 
 # Automated testing hook: pass `--seed=<int>` as a user argument (after `--`),
 # or export ATHAR_SEED, to force one reproducible world layout. Without either,
 # the engine's normal random seed applies and gameplay is unchanged.
 const TEST_SEED_ARG := "--seed="
 var test_seed_active := false
+
+const STATE_PLAYING := "playing"
+const STATE_MENU := "menu"
 
 
 ## Read-only view of the deer's behaviour state, kept for simple access.
@@ -88,6 +114,9 @@ var captured: bool:
 func _ready() -> void:
 	_apply_test_seed()
 	_setup_input()
+	# Settings and language load before anything builds a label, so the first frame
+	# is already in the player's language rather than flashing English.
+	_load_settings()
 	_build_environment()
 	_build_world()
 	_build_hunter()
@@ -95,10 +124,18 @@ func _ready() -> void:
 	_build_camera()
 	_build_living_world()
 	_build_hud()
+	_build_menus()
 	_build_audio()
 	deer_ai.state_changed.connect(_on_deer_state_changed)
 	hunt_session.deer_captured.connect(_on_deer_captured)
-	_update_status("Find the deer. Move quietly through the forest.")
+	_update_status("hud.initial_status")
+	_apply_graphics(audio_settings.quality)
+	_apply_safe_area()
+	# Desktop and Android players start on the title screen. Headless runs (the
+	# automated suites and the screenshot tools) start straight in the hunt, which
+	# is exactly how they behaved before this phase.
+	if DisplayServer.get_name() != "headless":
+		open_main_menu()
 	# Printed when a test seed is active, or in headless runs, so the automated
 	# tests can compare layouts. Desktop play stays silent.
 	if test_seed_active or DisplayServer.get_name() == "headless":
@@ -223,73 +260,82 @@ func _apply_wildlife_environment() -> void:
 	deer_ai.set_environment_modifiers(float(senses["vision"]), float(senses["hearing"]), float(senses["memory"]))
 
 
+## Loads the persisted preferences and switches the UI language before anything
+## is built, so the first frame is already correct.
+func _load_settings() -> void:
+	audio_settings = GameSettings.new()
+	audio_settings.load_settings()
+	Localization.ensure_installed()
+	Localization.set_language(audio_settings.language)
+
+
+## The HUD is its own scene with its own layout code (scripts/ui/hud.gd). main.gd
+## keeps the old public references — hunt_button, status_label, info_label,
+## deer_marker — pointing at the new controls, so the Phase 3 tests and the
+## screenshot tools keep working against a completely rebuilt interface.
 func _build_hud() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	var root := Control.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(root)
-	hud_root = root
-	var title := Label.new()
-	title.text = "ATHAR  |  WILDLANDS"
-	title.position = Vector2(26, 18)
-	title.add_theme_font_size_override("font_size", 25)
-	title.add_theme_color_override("font_color", Color(0.91, 0.78, 0.48))
-	root.add_child(title)
-	status_label = Label.new()
-	status_label.position = Vector2(28, 58)
-	status_label.add_theme_font_size_override("font_size", 17)
-	status_label.add_theme_color_override("font_color", Color(0.92, 0.93, 0.84))
-	root.add_child(status_label)
-	info_label = Label.new()
-	info_label.text = "STAMINA 100%   •   FOREST REGION"
-	info_label.position = Vector2(28, 88)
-	info_label.add_theme_font_size_override("font_size", 14)
-	info_label.add_theme_color_override("font_color", Color(0.64, 0.82, 0.72))
-	root.add_child(info_label)
-	_add_hold_button(root, "▲", Vector2(112, -184), "move_forward")
-	_add_hold_button(root, "▼", Vector2(112, -64), "move_back")
-	_add_hold_button(root, "◀", Vector2(52, -124), "move_left")
-	_add_hold_button(root, "▶", Vector2(172, -124), "move_right")
-	# Edge-of-screen cue for a deer that has left the frame. Added after the
-	# labels so it never covers the HUD text, and ignored by the mouse.
-	deer_marker = DeerMarker.new()
-	deer_marker.name = "DeerMarker"
-	deer_marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.add_child(deer_marker)
-	hunt_button = Button.new()
-	hunt_button.text = "HUNT / TRACK"
-	hunt_button.position = Vector2(-210, -105)
-	hunt_button.size = Vector2(180, 66)
-	hunt_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	hunt_button.add_theme_font_size_override("font_size", 19)
-	hunt_button.add_theme_color_override("font_color", Color(0.98, 0.88, 0.63))
-	hunt_button.add_theme_stylebox_override("normal", _button_style(Color(0.20, 0.27, 0.19, 0.94)))
-	hunt_button.add_theme_stylebox_override("pressed", _button_style(Color(0.42, 0.30, 0.13, 0.98)))
-	hunt_button.pressed.connect(_on_hunt_pressed)
-	root.add_child(hunt_button)
-	var hint := Label.new()
-	hint.text = "Move with the left controls • Approach slowly • Run it down when it bolts"
-	hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	hint.position = Vector2(24, -32)
-	hint.add_theme_font_size_override("font_size", 14)
-	hint.add_theme_color_override("font_color", Color(0.86, 0.86, 0.76))
-	root.add_child(hint)
+	hud_layer = CanvasLayer.new()
+	hud_layer.name = "HudLayer"
+	hud_layer.layer = 5
+	add_child(hud_layer)
+	hud = HUD_SCENE.instantiate()
+	hud_layer.add_child(hud)
+	hud.setup(audio_settings)
+	hud.action_pressed.connect(_on_hunt_pressed)
+	hud.interact_pressed.connect(_on_interact_pressed)
+	hud.pause_pressed.connect(open_pause)
+	hud.move_changed.connect(_on_stick_moved)
+	hud_root = hud
+	status_label = hud.status_label
+	info_label = hud.info_label
+	hunt_button = hud.action_button
+	deer_marker = hud.marker
+	hud.layout_for(get_viewport().get_visible_rect().size)
+
+
+## Title, pause and settings screens plus the confirmation prompt. They live on a
+## layer above the HUD, are built once and are only shown or hidden afterwards.
+func _build_menus() -> void:
+	menu_layer = CanvasLayer.new()
+	menu_layer.name = "MenuLayer"
+	menu_layer.layer = 10
+	add_child(menu_layer)
+
+	main_menu = MAIN_MENU_SCENE.instantiate()
+	menu_layer.add_child(main_menu)
+	pause_menu = PAUSE_MENU_SCENE.instantiate()
+	menu_layer.add_child(pause_menu)
+	settings_menu = SETTINGS_MENU_SCENE.instantiate()
+	menu_layer.add_child(settings_menu)
+	settings_menu.setup(audio_settings)
+	confirm_prompt = CONFIRM_SCENE.instantiate()
+	menu_layer.add_child(confirm_prompt)
+
+	main_menu.begin_pressed.connect(start_game)
+	main_menu.settings_pressed.connect(func() -> void: open_settings(true))
+	main_menu.quit_pressed.connect(func() -> void: get_tree().quit())
+	pause_menu.resume_pressed.connect(resume_game)
+	pause_menu.settings_pressed.connect(func() -> void: open_settings(false))
+	pause_menu.restart_pressed.connect(request_restart)
+	pause_menu.menu_pressed.connect(request_return_to_menu)
+	settings_menu.closed.connect(_on_settings_closed)
+	settings_menu.language_changed.connect(_on_language_changed)
+	settings_menu.quality_changed.connect(_apply_graphics)
+	settings_menu.sensitivity_changed.connect(_on_sensitivity_changed)
+	settings_menu.reset_requested.connect(_on_settings_reset)
+	confirm_prompt.confirmed.connect(_on_confirmed)
 
 ## Sound. Built after the HUD so the volume panel can live in it, and after the
 ## deer exists so its voice can be attached to it in 3D.
 func _build_audio() -> void:
-	audio_settings = AudioSettings.new()
-	audio_settings.load_settings()
 	audio = AudioDirector.new()
 	audio.name = "AudioDirector"
 	add_child(audio)
 	audio.setup(audio_settings)
 	audio.attach_deer(deer)
-	audio_panel = AudioPanel.new()
-	audio_panel.name = "AudioSettings"
-	hud_root.add_child(audio_panel)
-	audio_panel.setup(audio_settings)
+	# The Phase 3.4 volume panel now lives inside the settings screen as a folded
+	# section; the reference is kept so the audio suite still finds it.
+	audio_panel = settings_menu.audio_section
 	_sync_audio_environment()
 
 
@@ -303,27 +349,6 @@ func _sync_audio_environment() -> void:
 	audio.set_environment(float(day["night"]), float(weather["rain"]), float(weather["wind"]))
 
 
-func _button_style(color: Color) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = color
-	s.border_color = Color(0.68, 0.59, 0.35, 0.8)
-	s.set_border_width_all(2)
-	s.set_corner_radius_all(18)
-	return s
-
-func _add_hold_button(parent: Control, caption: String, offset: Vector2, action: String) -> void:
-	var b := Button.new()
-	b.text = caption
-	b.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	b.position = offset
-	b.size = Vector2(58, 58)
-	b.add_theme_font_size_override("font_size", 25)
-	b.add_theme_color_override("font_color", Color(0.96, 0.91, 0.75))
-	b.add_theme_stylebox_override("normal", _button_style(Color(0.12, 0.19, 0.16, 0.88)))
-	b.add_theme_stylebox_override("pressed", _button_style(Color(0.35, 0.34, 0.20, 0.98)))
-	b.button_down.connect(func(): Input.action_press(action))
-	b.button_up.connect(func(): Input.action_release(action))
-	parent.add_child(b)
 
 # ---------------------------------------------------------------- gameplay ---
 func _physics_process(delta: float) -> void:
@@ -333,7 +358,11 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_pressed("move_back"): dir.z += 1
 	if Input.is_action_pressed("move_left"): dir.x -= 1
 	if Input.is_action_pressed("move_right"): dir.x += 1
-	if dir.length() > 0:
+	# Touch pad: screen up is -y and forward is -z, so the axes map straight
+	# across. Keys and the stick add together without breaking the old path.
+	dir.x += joystick_vector.x
+	dir.z += joystick_vector.y
+	if dir.length() > 0.001:
 		dir = dir.normalized()
 		hunter.velocity.x = dir.x * HUNTER_SPEED
 		hunter.velocity.z = dir.z * HUNTER_SPEED
@@ -359,7 +388,7 @@ func _physics_process(delta: float) -> void:
 	camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
 	if deer_marker != null:
 		deer_marker.update_marker(camera, deer.global_position, deer.visible and not hunt_session.is_captured)
-	info_label.text = "STAMINA %d%%   •   %s   •   DEER %s" % [int(stamina), living_world.hud_text(), deer_ai.activity_text().to_upper()]
+	_update_hud()
 
 ## True when a trunk sits on the straight line from `from` to `to`. Only tree
 ## trunks (layer 2) and the ground (layer 1) count; the deer itself is excluded.
@@ -409,31 +438,34 @@ func _on_deer_captured() -> void:
 	deer.velocity = Vector3.ZERO
 	_set_deer_collision(false)
 	deer.visible = false
-	hunt_button.text = "NEW HUNT"
-	_update_status("Successful capture! The deer is secured. Press NEW HUNT to track another.")
+	if hud != null:
+		hud.set_action_key("hud.action.new_hunt")
+		hud.set_interact_key("")
+		hud.toast("toast.captured")
+	_update_status("status.captured")
 
 func _on_deer_state_changed(previous: String, current: String) -> void:
 	match current:
 		DeerAI.ALERTED:
-			_update_status("The deer lifts its head — it has noticed you. Hold still.")
+			_update_status("status.alerted")
 			if audio != null:
 				audio.play_deer_alert()
 		DeerAI.INVESTIGATING:
-			_update_status("It is edging closer to look. Do not move yet.")
+			_update_status("status.investigating")
 		DeerAI.FLEEING:
-			_update_status("It bolted! Chase now — it will tire before you do.")
+			_update_status("status.fleeing")
 			if audio != null:
 				audio.play_deer_flee()
 		DeerAI.ESCAPING:
-			_update_status("The deer is tiring. Keep the pressure on and close the gap.")
+			_update_status("status.escaping")
 		DeerAI.RETURNING:
-			_update_status("It is drifting away, still wary. Let it settle.")
+			_update_status("status.returning")
 		DeerAI.GRAZING:
 			if previous in [DeerAI.ESCAPING, DeerAI.RETURNING]:
-				_update_status("The deer slipped away and settled down. Approach quietly again.")
+				_update_status("status.escaped")
 		DeerAI.RESTING:
 			if previous == DeerAI.GRAZING:
-				_update_status("The deer has settled to rest. Move slowly.")
+				_update_status("status.resting")
 
 ## Capture disables the deer's collision so it cannot be pushed, collided with,
 ## or captured again; a new hunt re-enables it.
@@ -453,8 +485,10 @@ func _on_hunt_pressed() -> void:
 	var distance := hunter.global_position.distance_to(deer.global_position)
 	if hunt_session.distance_in_reach(distance):
 		hunt_session.try_capture(distance)
-	else:
-		_update_status("Too far away (%dm). Close the distance — it tires before you do." % int(distance))
+	elif hud != null:
+		# The status line carries the story; the toast answers the touch itself, so
+		# a refused press still feels like it did something.
+		hud.toast("toast.too_far", int(distance))
 
 ## GRAZING -> ALERTED -> FLEEING -> CHASE -> CAPTURED -> NEW HUNT.
 func _start_new_hunt() -> void:
@@ -467,8 +501,10 @@ func _start_new_hunt() -> void:
 	_set_deer_collision(true)
 	deer_ai.reset()
 	deer_rig.set_state(DeerAI.GRAZING)
-	hunt_button.text = "HUNT / TRACK"
-	_update_status("A new deer has wandered into the clearing. Approach quietly.")
+	if hud != null:
+		hud.set_action_key("hud.action.hunt")
+		hud.toast("toast.new_hunt")
+	_update_status("status.new_hunt")
 
 func _pick_deer_spot() -> Vector3:
 	for attempt in range(20):
@@ -479,9 +515,13 @@ func _pick_deer_spot() -> Vector3:
 			return Vector3(spot.x, 0.1, spot.z)
 	return hunter.global_position + Vector3(0, 0.1, -NEW_HUNT_MIN_DISTANCE)
 
-func _update_status(message: String) -> void:
-	if status_label:
-		status_label.text = message
+## `key` is a localization key, never a sentence, so the message survives a
+## language change and the same state can be announced in either language.
+func _update_status(key: String) -> void:
+	if hud != null:
+		hud.set_status_key(key)
+	elif status_label != null:
+		status_label.text = key
 
 # Seeds the global RNG only when a test seed was supplied. See TESTING.md.
 var _seed_value := 0
@@ -521,3 +561,249 @@ func _world_checksum() -> String:
 		elif child is MeshInstance3D:
 			parts.append("%.4f,%.4f,%.4f" % [child.position.x, child.position.y, child.position.z])
 	return ",".join(parts).sha256_text()
+
+
+# ------------------------------------------------------------------- hud -----
+## Vitals, the time/weather/quarry line and the context buttons, refreshed every
+## physics step. The HUD ignores calls that do not change anything, so an idle
+## screen costs comparisons rather than layout work.
+func _update_hud() -> void:
+	if hud == null or living_world == null:
+		return
+	var condition: float = clampf(deer_ai.stamina, 0.0, 1.0)
+	hud.set_vitals(clampf(stamina / 100.0, 0.0, 1.0), condition, _alert_level())
+	hud.set_info(
+		living_world.day.clock_text(),
+		"hud.phase." + String(living_world.day.phase()),
+		"hud.weather." + String(living_world.weather.label()).to_lower(),
+		"hud.deer." + deer_ai.activity_text())
+	_update_context()
+
+
+## How aware the deer is, 0..1, derived from its behaviour state rather than a
+## separate hidden number — the bar shows what the animal is actually doing.
+func _alert_level() -> float:
+	match deer_state:
+		DeerAI.FLEEING:
+			return 1.0
+		DeerAI.ALERTED:
+			return 0.85
+		DeerAI.ESCAPING:
+			return 0.7
+		DeerAI.INVESTIGATING:
+			return 0.6
+		DeerAI.OBSERVING:
+			return 0.4
+		DeerAI.RESTING:
+			return 0.2
+		DeerAI.GRAZING:
+			return 0.15
+	return 0.0
+
+
+## The big button tracks the hunt, and the context button only appears when the
+## deer is close enough to touch — a button that cannot do anything is hidden.
+func _update_context() -> void:
+	if hud == null or hunt_session == null:
+		return
+	if captured:
+		hud.set_action_key("hud.action.new_hunt")
+		hud.set_interact_key("")
+		return
+	hud.set_action_key("hud.action.hunt")
+	var distance := hunter.global_position.distance_to(deer.global_position)
+	hud.set_interact_key("hud.capture" if hunt_session.distance_in_reach(distance) else "")
+
+
+func _on_stick_moved(value: Vector2) -> void:
+	joystick_vector = value
+
+
+## The context button does one thing: take the deer when it is within reach.
+func _on_interact_pressed() -> void:
+	if deer == null or hunt_session == null:
+		return
+	var distance := hunter.global_position.distance_to(deer.global_position)
+	if hunt_session.distance_in_reach(distance):
+		hunt_session.try_capture(distance)
+	elif hud != null:
+		hud.toast("toast.too_far", int(distance))
+
+
+# ------------------------------------------------------------------ menus ----
+func open_main_menu() -> void:
+	if main_menu == null:
+		return
+	pause_menu.close()
+	settings_menu.close()
+	confirm_prompt.dismiss()
+	main_menu.open()
+	game_state = STATE_MENU
+	set_physics_process(false)
+	if hud != null:
+		hud.release_controls()
+
+
+func start_game() -> void:
+	if audio != null:
+		audio.play_ui_tap()
+	main_menu.close()
+	settings_menu.close()
+	confirm_prompt.dismiss()
+	game_state = STATE_PLAYING
+	set_physics_process(true)
+	if _hunt_abandoned:
+		_hunt_abandoned = false
+		_reset_hunt_state()
+
+
+func open_pause() -> void:
+	if game_state == STATE_MENU or pause_menu == null:
+		return
+	game_state = STATE_MENU
+	set_physics_process(false)
+	if hud != null:
+		hud.release_controls()
+	if audio != null:
+		audio.play_ui_tap()
+	pause_menu.open()
+
+
+func resume_game() -> void:
+	pause_menu.close()
+	# Closing the settings screen normally re-opens the pause menu; resuming is the
+	# one case where that must not happen.
+	_suppress_settings_closed = true
+	settings_menu.close()
+	_suppress_settings_closed = false
+	confirm_prompt.dismiss()
+	game_state = STATE_PLAYING
+	set_physics_process(true)
+
+
+func open_settings(from_main: bool) -> void:
+	settings_opened_from_main = from_main
+	if from_main:
+		main_menu.close()
+	else:
+		pause_menu.close()
+	settings_menu.open()
+
+
+func _on_settings_closed() -> void:
+	if _suppress_settings_closed:
+		return
+	if settings_opened_from_main:
+		settings_opened_from_main = false
+		main_menu.open()
+	else:
+		pause_menu.open()
+	if audio_settings != null:
+		audio_settings.save()
+
+
+## Restart and "main menu" both go through the prompt: a thumb slips on a phone,
+## and throwing away a hunt on a mis-touch is not acceptable.
+func request_restart() -> void:
+	pending_action = "restart"
+	confirm_prompt.ask("confirm.restart.title", "confirm.restart.body")
+
+
+func request_return_to_menu() -> void:
+	pending_action = "menu"
+	confirm_prompt.ask("confirm.return.title", "confirm.return.body")
+
+
+func _on_confirmed() -> void:
+	var action := pending_action
+	pending_action = ""
+	match action:
+		"restart":
+			pause_menu.close()
+			game_state = STATE_PLAYING
+			set_physics_process(true)
+			_reset_hunt_state()
+		"menu":
+			_hunt_abandoned = true
+			open_main_menu()
+
+
+## Drops the deer somewhere fair, restores its collision and clears the chase.
+## Works whether the previous hunt ended in a capture or was simply restarted.
+func _reset_hunt_state() -> void:
+	if deer == null or deer_ai == null:
+		return
+	if hunt_session.is_captured:
+		_start_new_hunt()
+		stamina = 100.0
+		return
+	deer.global_position = _pick_deer_spot()
+	deer.velocity = Vector3.ZERO
+	deer.rotation.y = randf() * TAU
+	deer.visible = true
+	_set_deer_collision(true)
+	deer_ai.reset()
+	deer_rig.set_state(DeerAI.GRAZING)
+	stamina = 100.0
+	if hud != null:
+		hud.set_action_key("hud.action.hunt")
+		hud.set_interact_key("")
+	_update_status("status.new_hunt")
+
+
+# --------------------------------------------------------------- settings ----
+func _on_language_changed(code: String) -> void:
+	Localization.set_language(code)
+	_retranslate_ui()
+
+
+func _retranslate_ui() -> void:
+	for ui in [hud, main_menu, pause_menu, settings_menu, confirm_prompt]:
+		if ui != null:
+			ui.retranslate()
+
+
+func _apply_graphics(level: String) -> void:
+	var sun := get_node_or_null("Sun") as DirectionalLight3D
+	GraphicsProfile.apply(level, get_viewport(), sun)
+
+
+func _on_sensitivity_changed(value: float) -> void:
+	if audio_settings != null:
+		audio_settings.set_sensitivity(value)
+	if hud != null:
+		hud.set_sensitivity(value)
+
+
+func _on_settings_reset() -> void:
+	audio_settings.apply()
+	Localization.set_language(audio_settings.language)
+	_apply_graphics(audio_settings.quality)
+	if hud != null:
+		hud.set_sensitivity(audio_settings.sensitivity)
+		hud.toast("toast.saved")
+	_retranslate_ui()
+
+
+## Android reports a safe area for notches and rounded corners; the HUD keeps its
+## controls inside it. On a desktop or in a headless run there is no inset.
+func _apply_safe_area() -> void:
+	if hud == null:
+		return
+	var safe := DisplayServer.get_display_safe_area()
+	var window := DisplayServer.window_get_size()
+	if safe.size.x <= 0 or safe.size.y <= 0 or window.x <= 0 or window.y <= 0:
+		hud.set_safe_insets(0.0, 0.0, 0.0, 0.0)
+		return
+	hud.apply_safe_area(safe, window, get_viewport().get_visible_rect().size)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		_apply_safe_area()
+
+
+func _exit_tree() -> void:
+	# The UI kit caches the theme, styles and fonts in statics for the whole run;
+	# drop them on shutdown so nothing is reported as leaked at exit.
+	UiKit.release_cache()

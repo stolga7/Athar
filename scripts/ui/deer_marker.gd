@@ -21,12 +21,18 @@ const SHADOW_COLOR := Color(0.05, 0.06, 0.05, 0.55)
 ## Closer than this the model speaks for itself and the overlay stays out of the
 ## way.
 const ON_SCREEN_DISTANCE := 15.0
-## Keep the cue inside the part of the screen the HUD leaves free: the movement
-## pad sits bottom-left, HUNT bottom-right, and the title and readouts top-left.
+## Keep the cue inside the part of the screen the HUD leaves free. The HUD pushes
+## its real control sizes in through `set_safe_margins()` on every layout, so a
+## tablet and a small phone both keep the chevron clear of the thumbs.
 const SAFE_LEFT := 150.0
 const SAFE_RIGHT := 250.0
 const SAFE_TOP := 135.0
 const SAFE_BOTTOM := 215.0
+
+var safe_left := SAFE_LEFT
+var safe_right := SAFE_RIGHT
+var safe_top := SAFE_TOP
+var safe_bottom := SAFE_BOTTOM
 
 var _visible_target := false
 var _on_screen := false
@@ -74,10 +80,24 @@ func update_marker(camera: Camera3D, target: Vector3, show: bool) -> void:
 		_direction.y * limit.y / maxf(absf(_direction.y), 0.001)
 	)
 	_edge_position = centre + scaled
-	_edge_position.x = clampf(_edge_position.x, SAFE_LEFT, viewport_rect.size.x - SAFE_RIGHT)
-	_edge_position.y = clampf(_edge_position.y, SAFE_TOP, viewport_rect.size.y - SAFE_BOTTOM)
+	# A very small window can leave no room between the margins; fall back to the
+	# centre line rather than inverting the clamp.
+	var left_limit := minf(safe_left, viewport_rect.size.x * 0.5)
+	var right_limit := maxf(viewport_rect.size.x - safe_right, viewport_rect.size.x * 0.5)
+	var top_limit := minf(safe_top, viewport_rect.size.y * 0.5)
+	var bottom_limit := maxf(viewport_rect.size.y - safe_bottom, viewport_rect.size.y * 0.5)
+	_edge_position.x = clampf(_edge_position.x, left_limit, right_limit)
+	_edge_position.y = clampf(_edge_position.y, top_limit, bottom_limit)
 	_visible_target = true
 	queue_redraw()
+
+
+## Insets, in pixels, that the cue must stay inside: the HUD's own controls.
+func set_safe_margins(left: float, right: float, top: float, bottom: float) -> void:
+	safe_left = maxf(left, 0.0)
+	safe_right = maxf(right, 0.0)
+	safe_top = maxf(top, 0.0)
+	safe_bottom = maxf(bottom, 0.0)
 
 
 func _hide() -> void:

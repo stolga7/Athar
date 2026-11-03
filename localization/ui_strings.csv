@@ -1,0 +1,80 @@
+keys,ar,en
+app.title,أَثَر,ATHAR
+app.tagline,صيدٌ في البراري,A hunt in the wildlands
+menu.begin,ابدأ صيدًا,BEGIN HUNT
+menu.resume,متابعة,RESUME
+menu.settings,الإعدادات,SETTINGS
+menu.restart,إعادة الصيد,RESTART HUNT
+menu.main_menu,القائمة الرئيسية,MAIN MENU
+menu.quit,إنهاء اللعبة,QUIT GAME
+menu.version,المرحلة 3.5 — نموذج أوّلي,Phase 3.5 — prototype
+pause.title,توقّف مؤقت,PAUSED
+confirm.return.title,العودة إلى القائمة الرئيسية؟,Return to the main menu?
+confirm.return.body,ستُفقد الجولة الحالية ولا يمكن استعادتها.,The current hunt will be lost and cannot be restored.
+confirm.restart.title,إعادة الصيد؟,Restart the hunt?
+confirm.restart.body,سيبدأ صيدٌ جديد من موقعك الحالي.,A new hunt will start from where you stand.
+confirm.yes,تأكيد,CONFIRM
+confirm.no,إلغاء,CANCEL
+settings.title,الإعدادات,SETTINGS
+settings.audio,الصوت,SOUND
+settings.master,الصوت العام,Master
+settings.music,الموسيقى,Music
+settings.effects,المؤثرات,Effects
+settings.mute,كتم,MUTE
+settings.unmute,إلغاء الكتم,UNMUTE
+settings.graphics,الرسومات,GRAPHICS
+settings.quality,جودة العرض,Quality
+settings.quality.low,منخفضة,Low
+settings.quality.medium,متوسطة,Medium
+settings.quality.high,عالية,High
+settings.quality.note,الجودة المنخفضة أفضل للأجهزة المتواضعة.,Low suits modest phones.
+settings.language,اللغة,Language
+settings.language.ar,العربية,Arabic
+settings.language.en,الإنجليزية,English
+settings.sensitivity,حساسية العصا,Stick sensitivity
+settings.sensitivity.slow,أبطأ,Slower
+settings.sensitivity.fast,أسرع,Faster
+settings.reset,استعادة الافتراضي,RESET DEFAULTS
+settings.close,إغلاق,CLOSE
+toast.saved,حُفظت الإعدادات,Settings saved
+hud.pause,إيقاف,PAUSE
+hud.action.hunt,تَتَبُّع,TRACK
+hud.action.new_hunt,صيد جديد,NEW HUNT
+hud.capture,أمسِك,CAPTURE
+hud.vital.stamina,النَّفَس,STAMINA
+hud.vital.condition,حال الطريدة,QUARRY
+hud.vital.alert,الانتباه,ALERT
+hud.hint,العصا للحركة — اقترب بهدوء — اشتدّ في الطلب حين يهرب,Stick to move — approach quietly — press the chase when it bolts
+hud.initial_status,اعثر على الغزال. تحرّك بهدوء بين الأشجار.,Find the deer. Move quietly through the forest.
+hud.metres,%d م,%d m
+hud.info,الوقت والطقس,Time and weather
+hud.phase.dawn,الفجر,Dawn
+hud.phase.day,النهار,Day
+hud.phase.dusk,الغروب,Dusk
+hud.phase.night,الليل,Night
+hud.weather.clear,صافٍ,Clear
+hud.weather.cloudy,غائم,Cloudy
+hud.weather.rain,مطر,Rain
+hud.weather.fog,ضباب,Fog
+hud.deer.grazing,يرعى,Grazing
+hud.deer.wandering,يتجوّل,Wandering
+hud.deer.watching,يراقب,Watching
+hud.deer.resting,يستريح,Resting
+hud.deer.alert,منتبه,Alert
+hud.deer.investigating,يتحقّق,Investigating
+hud.deer.fleeing,هارب,Fleeing
+hud.deer.tiring,يتعب,Tiring
+hud.deer.settling,يستقر,Settling
+hud.deer.captured,مُمسَك,Captured
+status.alerted,رفع الغزال رأسه — لاحظك. اثبت مكانك.,The deer lifts its head — it has noticed you. Hold still.
+status.investigating,يقترب ليتحقّق. لا تتحرّك بعد.,It is edging closer to look. Do not move yet.
+status.fleeing,انطلق هاربًا! اتبعه الآن — سيتعب قبل أن تتعب.,It bolted! Chase now — it will tire before you do.
+status.escaping,بدأ الغزال يتعب. واصل الضغط وقلّص المسافة.,The deer is tiring. Keep the pressure on and close the gap.
+status.returning,يبتعد وهو حذر. دعه يستقر.,It is drifting away, still wary. Let it settle.
+status.escaped,أفلت الغزال واستقر. اقترب بهدوء من جديد.,The deer slipped away and settled down. Approach quietly again.
+status.resting,استراح الغزال. تحرّك ببطء.,The deer has settled to rest. Move slowly.
+status.captured,صيدٌ موفّق! الغزال في حوزتك. اضغط «صيد جديد» لتتبّع آخر.,Successful capture! The deer is secured. Press NEW HUNT to track another.
+status.new_hunt,غزال جديد دخل الساحة. اقترب بهدوء.,A new deer has wandered into the clearing. Approach quietly.
+toast.too_far,بعيد جدًا — %d م,Too far — %d m
+toast.captured,أُمسِك الغزال,Deer captured
+toast.new_hunt,غزال جديد في الساحة,A new deer is near

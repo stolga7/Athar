@@ -38,16 +38,17 @@ git-ignored.
 
 | Action | Touch (target platform) | Desktop |
 | --- | --- | --- |
-| Move | Four on-screen direction buttons, bottom-left | `W` `A` `S` `D` or arrow keys |
-| Capture | `HUNT / TRACK` button, bottom-right — captures when the deer is within 1.8 m | — (touch button only) |
+| Move | Analogue stick, bottom-left | `W` `A` `S` `D` or arrow keys |
+| Track / capture | `TRACK` button, bottom-right; when the deer is within 1.8 m a `CAPTURE` context button appears above it | — (touch buttons only) |
 | New hunt | The same button, relabelled `NEW HUNT` after a capture | — (touch button only) |
-| Volume / mute | `AUDIO` button, top-right: master, music and effects sliders plus mute | same button (mouse) |
+| Pause | `PAUSE` button in the top corner: resume, settings, restart, main menu | same button (mouse) |
+| Settings | Sound, graphics quality, language and stick sensitivity; saved between sessions | same screen (mouse) |
 
-The on-screen buttons drive the `move_forward`, `move_back`, `move_left` and
-`move_right` input actions. Those actions are declared in `project.godot` with
-keyboard equivalents (`W`/`S`/`A`/`D` and the arrow keys) so the prototype can
-be driven from the editor on desktop; the touch buttons remain the primary
-control scheme and press the same actions directly.
+The interface is Arabic by default and fully right to left; English is one tap
+away in Settings and the whole HUD mirrors immediately. Every visible string
+lives in `localization/ui_strings.csv` and is filled in at runtime, so no text is
+hardcoded in a script. The movement stick stays bottom-left and the action button
+bottom-right in both languages, because that is where thumbs already expect them.
 
 ## Project structure
 
@@ -70,8 +71,23 @@ scripts/world/weather.gd         Clear, cloudy, rain and fog, blended over time
 scripts/world/rain.gd            One bounded rain particle emitter
 scripts/world/living_world.gd    Binds clock, weather, wind and wildlife senses
 shaders/vegetation_wind.gdshader  Vertex wind for trees and grass
+scenes/ui/                  HUD, main menu, pause, settings and confirmation scenes
+scripts/ui/hud.gd            Vitals panel, touch stick, context buttons, toast, safe areas
+scripts/ui/ui_kit.gd         One palette, theme and widget set for every screen
+scripts/ui/localization.gd   Reads the CSV into translations and mirrors the layout
+scripts/ui/virtual_joystick.gd  Analogue stick: deadzone, clamping, one-finger ownership
+scripts/ui/vitals_bar.gd     One labelled gauge
+scripts/ui/main_menu.gd      Title screen
+scripts/ui/pause_menu.gd     Resume, settings, restart, return to title
+scripts/ui/settings_menu.gd  Sound, graphics, language and sensitivity
+scripts/ui/confirm_prompt.gd Restart / return-to-title confirmation
 scripts/ui/deer_marker.gd    Off-screen / distant deer cue
-scripts/ui/audio_panel.gd    Volume sliders and mute, top-right corner
+scripts/ui/audio_panel.gd    Volume sliders and mute, now a section of Settings
+scripts/settings/game_settings.gd     Persisted audio, language, graphics, sensitivity
+scripts/settings/graphics_profile.gd  Low/medium/high 3D rendering presets
+scripts/tests/ui_tests.gd    Headless interface, localization, layout and menu suite
+localization/ui_strings.csv  Every visible string, Arabic and English
+assets/fonts/                Amiri + IBM Plex Sans Arabic with their OFL licences
 scripts/audio/audio_director.gd  Beds, one-shot pool, footsteps and 3D animal audio
 scripts/audio/audio_settings.gd  Master/music/effects volumes and mute, persisted
 scripts/tests/audio_tests.gd      Headless audio asset, bus, settings and wiring suite
@@ -153,6 +169,26 @@ README_AR.md                 Arabic project notes
 - Touch HUD: title, status line, stamina bar, direction pad, hunt button.
 - Repeatable hunt loop: approach, alert, chase, capture, then `NEW HUNT`.
 
+### Interface (Phase 3.5)
+
+- A rebuilt mobile HUD: a dark violet panel with the hunt message, a
+  time/weather/quarry line and three vitals — the hunter's breath, the quarry's
+  condition and how alert it is. There is no health bar because the prototype has
+  no damage model; the three bars show state that actually exists.
+- One analogue movement stick instead of four direction buttons, with a deadzone,
+  clamping and single-finger ownership, plus a context `CAPTURE` button that
+  appears only when the deer is within reach.
+- Title, pause, settings and confirmation screens. Restart and "return to main
+  menu" both ask first, because a thumb slips.
+- Arabic by default with full RTL mirroring, and English from the settings screen.
+  The layout mirrors panels, text and the pause corner; the stick and the action
+  button keep their sides.
+- Settings for the Phase 3.4 volumes and mute, three graphics levels (3D render
+  scale, sun shadows, MSAA, shadow atlas), the interface language and stick
+  sensitivity, saved to `user://athar_settings.cfg`.
+- Safe-area insets for notches and rounded corners, and layouts verified from
+  800×360 up to a 2048×1536 tablet.
+
 ## Known limitations
 
 These are known and intentionally **not** changed in this baseline phase:
@@ -201,11 +237,12 @@ These are known and intentionally **not** changed in this baseline phase:
 
 Runs the headless checks — engine version, project import, GDScript parsing,
 startup, repository integrity, seed determinism, the hunting suite, the
-camera/visual suite, the wildlife AI suite, the living world suite and the audio
-suite — and exits non-zero if any of them fail. The hunting suite runs 66
-checks, the visual suite 53, the wildlife suite 100, the living world suite 95
-and the audio suite 86; the script itself reports 107 checks, including every
-suite's verdict. Full details in [TESTING.md](TESTING.md).
+camera/visual suite, the wildlife AI suite, the living world suite, the audio
+suite and the interface suite — and exits non-zero if any of them fail. The
+hunting suite runs 66 checks, the visual suite 53, the wildlife suite 100, the
+living world suite 95, the audio suite 86 and the interface suite 217; the script
+itself reports 156 checks, including every suite's verdict. Full details in
+[TESTING.md](TESTING.md).
 
 Rendered screenshots are in [docs/screenshots](docs/screenshots/): the world
 views of Phase 3.1 (spawn, deer at close range, chase, camera pinned against a

@@ -422,6 +422,38 @@ Audio values, all named constants in `scripts/audio/audio_director.gd`:
 
 ---
 
+### L. Interface, localization and settings
+Runs `scenes/tests/ui_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/ui_tests.tscn
+```
+
+Same contract as G–K: exit code 0, no project errors, a `RESULT:` summary with at
+least 150 checks, and `0 failed`. Section L also checks the repository itself: no
+hardcoded visible strings in `scripts/ui` or `scripts/settings`, every key the
+game asks for exists in the CSV, every row has both languages, and the fonts and
+their licences ship.
+
+| Area | What is asserted |
+|---|---|
+| Assets | the CSV parses, 79 keys, no duplicate or blank rows, both columns present and genuinely translated, Arabic rows contain Arabic letters |
+| Runtime | Arabic is the default, English switches every string, unknown keys and locales fall back safely, RTL/LTR layout direction and text alignment follow the language |
+| Look | one shared theme, a packaged Arabic font with Arabic and Latin glyphs, an ordered type scale, a distinct palette, minimum 56 px touch targets |
+| Localization | no control in the HUD, title, pause, settings or confirmation screens shows untranslated text, in either language |
+| HUD | status, information, action, context, pause and three vitals exist; the context button hides when there is nothing to do; a toast appears and fades |
+| Layout | at 1280×720, 2400×1080, 800×360, 2048×1536 and 1920×1080: touch targets stay ≥ 56 px, every control is inside the screen, the stick and action button cannot be hit together, the panel keeps its corner, the toast never covers the action button |
+| Safe areas | a notch inset pushes the pad and the panel inwards; a short screen drops the title, clock and hint rather than stacking text over the controls |
+| Stick | a touch grabs it, a second finger is ignored, a release anywhere resets it, the deadzone keeps a resting thumb still, full tilt never exceeds 1, sensitivity scales the push, the mouse path works |
+| Settings | save → new instance → load round-trips language, quality, sensitivity and the Phase 3.4 volumes; invalid values clamp or fall back; a missing file is not fatal; reset restores defaults; only the low level turns shadows off |
+| Menus | pause suspends the hunt and releases the stick, resume restores it, settings open over pause and return to it, language and graphics changes apply live and persist, restart and return-to-title both require confirmation |
+| Scene | the scene exposes the old `hunt_button`/`status_label`/`deer_marker` references, boots in Arabic, captures on contact, relabels to NEW HUNT and starts a fresh hunt |
+
+What this cannot prove: it measures rectangles and delivers synthetic touches with
+no renderer and no display, so it does not show that the interface *looks* right,
+that a real thumb reaches every control comfortably, or how a specific phone
+shapes Arabic text. Those need a device; see section 5.
+
 ## 4. Reading the result
 
 Each check prints `PASS` or `FAIL`, failures print the exact diagnostic lines
@@ -429,15 +461,15 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  107 checks, 0 failed
+  156 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Checks G, H, I, J and K are one line each here; the 66 hunting, 53
-camera/visual, 100 wildlife, 95 living world and 86 audio checks they gate are
-listed in full in `hunting-tests.log`, `visual-tests.log`, `wildlife-tests.log`,
-`world-tests.log` and `audio-tests.log`, and summarised as
-`RESULT: <n> checks, 0 failed`.
+Checks G, H, I, J, K and L are one line each here; the 66 hunting, 53
+camera/visual, 100 wildlife, 95 living world, 86 audio and 217 interface checks
+they gate are listed in full in `hunting-tests.log`, `visual-tests.log`,
+`wildlife-tests.log`, `world-tests.log`, `audio-tests.log` and `ui-tests.log`,
+and summarised as `RESULT: <n> checks, 0 failed`.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:

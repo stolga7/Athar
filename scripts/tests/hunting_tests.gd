@@ -13,6 +13,9 @@ const DeerAI := preload("res://scripts/animals/deer_ai.gd")
 const HuntSession := preload("res://scripts/gameplay/hunt_session.gd")
 const MainScript := preload("res://scripts/main.gd")
 const MAIN_SCENE := preload("res://scenes/main.tscn")
+## The HUD is localized now, so the label text is whatever the active language
+## says for `hud.action.new_hunt` instead of a hardcoded English string.
+const Localization := preload("res://scripts/ui/localization.gd")
 
 const DT := 1.0 / 60.0
 const CAPTURE_DISTANCE := 1.8
@@ -403,7 +406,8 @@ func _test_live_scene() -> void:
 	_check(_main.hunt_session.capture_count == 1, "no duplicate capture while the deer is secured", "%d" % _main.hunt_session.capture_count)
 
 	# The existing HUNT button becomes the new-hunt control.
-	_check(_main.hunt_button.text == "NEW HUNT", "HUNT button becomes NEW HUNT", _main.hunt_button.text)
+	_check(_main.hunt_button.text == Localization.text("hud.action.new_hunt"),
+		"HUNT button becomes NEW HUNT", _main.hunt_button.text)
 	_main._on_hunt_pressed()
 	await get_tree().physics_frame
 	await get_tree().physics_frame

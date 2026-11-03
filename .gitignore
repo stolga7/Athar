@@ -24,3 +24,6 @@ Thumbs.db
 desktop.ini
 *.tmp
 *.swp
+
+# CSV import artefacts (the game reads localization/ui_strings.csv directly)
+localization/*.translation
