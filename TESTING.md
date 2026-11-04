@@ -454,6 +454,36 @@ no renderer and no display, so it does not show that the interface *looks* right
 that a real thumb reaches every control comfortably, or how a specific phone
 shapes Arabic text. Those need a device; see section 5.
 
+### M. World regions
+Runs `scenes/tests/region_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/region_tests.tscn
+```
+
+Same contract as G–L: exit code 0, no project errors, a `RESULT:` summary with at
+least 300 checks, and `0 failed`. Section M also checks the repository: the
+region table must define exactly ten entries, and the region sources must exist.
+
+| Area | What is asserted |
+|---|---|
+| Data | ten regions exist with the brief's ids, unique ids, every field present, a landmark, exits that point at real regions, no region exiting to itself, and a gate far enough from the entry point |
+| Text | every region name and description key exists in both languages, plus the HUD, status, toast, menu and screen keys |
+| Identity | ten distinct ground palettes, ten landmark styles, nine non-neutral atmospheres (the silver forest is neutral on purpose), and ground cover in every region |
+| Loading | the manager loads a region, installs nodes, reports the same counts it built, discovers the region, and leaves exactly one ground, one grass batch and one collision body |
+| Unloading | loading another region removes the previous nodes, never stacks two grounds, and frees the old nodes by the next frame; unconditional unload returns the scene to its baseline |
+| Budget | each of the ten regions stays under 60 nodes, 40 mesh instances and 12 materials, and the suite prints the worst region it measured |
+| Determinism | two managers with the same seed produce the same geometry fingerprint for the silver forest, the desert and the void realm; a different seed changes it; two unseeded managers differ |
+| Missing resources | an unknown region id is refused with a reason and the current region stays loaded; a definition without a gate, with an inverted vegetation ring, or exiting to itself is rejected; an unknown landmark style still builds a stone circle; a treeless region still provides a collision body |
+| Travel | the scene boots in the silver forest, travels to the desert and back, keeps breath, the capture count and the secured quarry, moves the hunter to the entry point, replaces the ground, applies the region's atmosphere, places the quarry inside the habitat band with the habitat's temperament, updates the HUD name and the discovery count, and refuses travel to the same or an unknown region |
+| Gate | standing on the gate turns the context button into travel, and walking away hides it |
+| Screen | the region screen lists ten regions, opens on the current one, disables travel for it, describes the selection, requests travel for another region, and closes once |
+| Reachability | all ten regions can actually be entered in one session, and the discovery indicator reaches ten |
+
+What this cannot prove: the suite measures nodes, colours and numbers without a
+renderer, so it cannot show that the ten regions *look* distinct or pleasant.
+That needs a screen; see section 7.
+
 ## 4. Reading the result
 
 Each check prints `PASS` or `FAIL`, failures print the exact diagnostic lines
@@ -461,15 +491,16 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  156 checks, 0 failed
+  177 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Checks G, H, I, J, K and L are one line each here; the 66 hunting, 53
-camera/visual, 100 wildlife, 95 living world, 86 audio and 217 interface checks
-they gate are listed in full in `hunting-tests.log`, `visual-tests.log`,
-`wildlife-tests.log`, `world-tests.log`, `audio-tests.log` and `ui-tests.log`,
-and summarised as `RESULT: <n> checks, 0 failed`.
+Checks G, H, I, J, K, L and M are one line each here; the 66 hunting, 53
+camera/visual, 100 wildlife, 95 living world, 86 audio, 217 interface and 398
+region checks they gate are listed in full in `hunting-tests.log`,
+`visual-tests.log`, `wildlife-tests.log`, `world-tests.log`, `audio-tests.log`,
+`ui-tests.log` and `region-tests.log`, and summarised as
+`RESULT: <n> checks, 0 failed` — 1,015 checks in total.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -603,6 +634,12 @@ SCENE_STATS nodes=265 trees=84 far_trees=54 tree_nodes=17
 | `03_chase` | deer fleeing off to the side, showing that the shoulder offset keeps it out from behind the hunter |
 | `04_obstructed` | hunter pinned against a trunk: the camera pulls in and looks over his shoulder instead of filling the screen with bark |
 | `05_horizon` | treeline, fog and horizon seam at the world edge |
+
+Phase 3.6 adds no screenshots: the environment the phase was developed in has no
+display server, no root to install one and no software Vulkan driver, so the
+capture tool cannot start there. The region suite asserts what can be asserted
+without a renderer; whether the ten regions look distinct is unverified and needs
+a machine with a display.
 
 The committed copies live in `docs/screenshots/phase-3.1/` (960×540, downscaled
 from the 1280×720 renders to keep the repository small).

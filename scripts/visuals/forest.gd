@@ -72,30 +72,53 @@ const LEAF_PALETTES: Array = [
 
 
 ## Builds the forest under `parent` and returns a summary used by the tests.
-static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
+##
+## `options` lets a region change how much woodland it grows and what it looks
+## like (counts, ring, spacing, leaf palettes, bark colours, clearings) without
+## touching the shared constants. An empty dictionary reproduces the silver
+## forest exactly, which is what the default region passes.
+static func build(parent: Node3D, rng: RandomNumberGenerator, options := {}) -> Dictionary:
+	var leaf_palettes: Array = options.get("leaf_palettes", LEAF_PALETTES)
+	if leaf_palettes.is_empty():
+		leaf_palettes = LEAF_PALETTES
+	var bark_colors: Array = options.get("bark_colors", BARK_COLORS)
+	if bark_colors.is_empty():
+		bark_colors = BARK_COLORS
+	var tree_count := int(options.get("tree_count", TREE_COUNT))
+	var far_tree_count := int(options.get("far_tree_count", FAR_TREE_COUNT))
+	var inner_radius := float(options.get("inner_radius", INNER_RADIUS))
+	var outer_radius := float(options.get("outer_radius", OUTER_RADIUS))
+	var spacing := float(options.get("min_spacing", MIN_SPACING))
+	var clearings: Array = options.get("clearings", [
+		{"center": START_CENTER, "radius": START_CLEAR_RADIUS},
+		{"center": RUIN_CENTER, "radius": RUIN_CLEAR_RADIUS},
+	])
 	var variants := _variants()
 	var foliage := _foliage_material()
 	var meshes: Array[ArrayMesh] = []
 	for i in range(variants.size()):
-		meshes.append(_variant_mesh(variants[i], i, foliage))
+		meshes.append(_variant_mesh(variants[i], i, foliage, leaf_palettes, bark_colors))
 
 	var spots: Array[Dictionary] = []
 	var attempts := 0
-	var max_attempts := TREE_COUNT * 80
-	while spots.size() < TREE_COUNT and attempts < max_attempts:
+	var max_attempts := maxi(tree_count, 1) * 80
+	while spots.size() < tree_count and attempts < max_attempts:
 		attempts += 1
 		# sqrt keeps the trees evenly spread over the ring instead of clumping
 		# against the inner edge.
-		var radius := sqrt(rng.randf_range(INNER_RADIUS * INNER_RADIUS, OUTER_RADIUS * OUTER_RADIUS))
+		var radius := sqrt(rng.randf_range(inner_radius * inner_radius, outer_radius * outer_radius))
 		var angle := rng.randf() * TAU
 		var p := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
-		if p.distance_to(START_CENTER) < START_CLEAR_RADIUS:
-			continue
-		if p.distance_to(RUIN_CENTER) < RUIN_CLEAR_RADIUS:
+		var cleared := false
+		for clearing in clearings:
+			if p.distance_to(clearing["center"]) < float(clearing["radius"]):
+				cleared = true
+				break
+		if cleared:
 			continue
 		var too_close := false
 		for spot in spots:
-			if p.distance_to(spot["position"]) < MIN_SPACING:
+			if p.distance_to(spot["position"]) < spacing:
 				too_close = true
 				break
 		if too_close:
@@ -112,7 +135,7 @@ static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 	# One MultiMeshInstance3D per variant, each holding every tree of that shape.
 	var far_spots: Array[Dictionary] = []
 	var far_attempts := 0
-	while far_spots.size() < FAR_TREE_COUNT and far_attempts < FAR_TREE_COUNT * 30:
+	while far_spots.size() < far_tree_count and far_attempts < maxi(far_tree_count, 1) * 30:
 		far_attempts += 1
 		var far_angle := rng.randf() * TAU
 		var far_radius := rng.randf_range(FAR_INNER_RADIUS, FAR_OUTER_RADIUS)
@@ -231,15 +254,15 @@ static func _foliage_material() -> ShaderMaterial:
 
 
 ## Builds one tree variant as a single vertex-coloured mesh.
-static func _variant_mesh(spec: Dictionary, index: int, material: Material) -> ArrayMesh:
+static func _variant_mesh(spec: Dictionary, index: int, material: Material, leaf_palettes: Array, bark_colors: Array) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# Each variant jitters its crown from its own fixed seed, so the shape is
 	# stable no matter which world seed placed it.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7919 * (index + 1)
-	var bark: Color = BARK_COLORS[spec["bark"]]
-	var palette: Array = LEAF_PALETTES[spec["palette"]]
+	var bark: Color = bark_colors[int(spec["bark"]) % bark_colors.size()]
+	var palette: Array = leaf_palettes[int(spec["palette"]) % leaf_palettes.size()]
 	var trunk_h: float = spec["trunk_height"]
 	var bottom: float = spec["trunk_bottom"]
 	var top: float = spec["trunk_top"]

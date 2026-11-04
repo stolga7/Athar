@@ -45,6 +45,22 @@ var _modifiers := {"vision": 1.0, "hearing": 1.0, "memory": 1.0}
 var _phase := ""
 var _weather_label := ""
 
+## Per-region atmosphere. Multipliers rather than absolute colours, so the clock
+## and the weather stay authoritative: a region tints noon and midnight, it does
+## not replace them. The default is neutral, which is why the silver forest looks
+## exactly as it did before regions existed.
+const NEUTRAL_TINT := {
+	"sun_color": Color(1, 1, 1),
+	"sun_energy": 1.0,
+	"ambient_color": Color(1, 1, 1),
+	"fog_color": Color(1, 1, 1),
+	"fog_density": 1.0,
+	"sky_tint": Color(1, 1, 1),
+	"sky_amount": 0.0,
+	"exposure": 1.0,
+}
+var region_tint := NEUTRAL_TINT.duplicate()
+
 
 func setup(env_info: Dictionary, ground: Dictionary, seed_value: int) -> void:
 	environment_info = env_info
@@ -105,6 +121,27 @@ func apply() -> void:
 	Rain.apply(rain_info, _hunter_position, _rain_intensity, _wind)
 
 
+## Installs a region's atmosphere (see region_definition.gd) and re-applies it.
+func set_region_tint(tint: Dictionary) -> void:
+	region_tint = NEUTRAL_TINT.duplicate()
+	for key in tint.keys():
+		if region_tint.has(key):
+			region_tint[key] = tint[key]
+	_apply_timer = 0.0
+	apply()
+
+
+func atmosphere() -> Dictionary:
+	return region_tint.duplicate()
+
+
+## Points the living world at a new region's ground so rain wetness and grass wind
+## hit the materials that are actually on screen.
+func rebind_ground(ground: Dictionary) -> void:
+	ground_info = ground
+	_apply_ground_wetness(_rain_intensity)
+
+
 func _apply_environment(day_sample: Dictionary, wx: Dictionary) -> void:
 	var env: Environment = environment_info["environment"]
 	var sun: DirectionalLight3D = environment_info["sun"]
@@ -125,7 +162,7 @@ func _apply_environment(day_sample: Dictionary, wx: Dictionary) -> void:
 	env.fog_light_color = day_sample["fog_color"]
 	env.fog_density = float(day_sample["fog_density"]) * fog_mult
 	env.fog_sky_affect = clampf(float(wx["fog_sky"]), 0.0, 1.0)
-	env.tonemap_exposure = float(day_sample["exposure"])
+	env.tonemap_exposure = float(day_sample["exposure"]) * float(region_tint["exposure"])
 
 	# Overcast greys the sky without lighting it up.
 	var grey := Color(0.30, 0.32, 0.34)
@@ -133,6 +170,21 @@ func _apply_environment(day_sample: Dictionary, wx: Dictionary) -> void:
 	var horizon: Color = day_sample["sky_horizon"]
 	sky_material.sky_top_color = top.lerp(grey * maxf(top.get_luminance(), 0.05) * 2.0, cloud * 0.5)
 	sky_material.sky_horizon_color = horizon.lerp(grey * maxf(horizon.get_luminance(), 0.06) * 2.0, cloud * 0.45)
+
+	# Region atmosphere: a tint over the clock, never a replacement for it. A
+	# neutral tint leaves every value exactly as the day cycle computed it.
+	sun.light_color = _tinted(sun.light_color, region_tint["sun_color"])
+	sun.light_energy *= float(region_tint["sun_energy"])
+	env.ambient_light_color = _tinted(env.ambient_light_color, region_tint["ambient_color"])
+	env.fog_light_color = _tinted(env.fog_light_color, region_tint["fog_color"])
+	env.fog_density *= float(region_tint["fog_density"])
+	var sky_amount := clampf(float(region_tint["sky_amount"]), 0.0, 1.0)
+	if sky_amount > 0.0:
+		var tint: Color = region_tint["sky_tint"]
+		sky_material.sky_top_color = sky_material.sky_top_color.lerp(
+			tint * maxf(sky_material.sky_top_color.get_luminance(), 0.06) * 2.0, sky_amount)
+		sky_material.sky_horizon_color = sky_material.sky_horizon_color.lerp(
+			tint * maxf(sky_material.sky_horizon_color.get_luminance(), 0.06) * 2.0, sky_amount * 0.85)
 
 	# Wind is a single shader parameter shared by every tree material and the grass.
 	_wind_strength = float(wx["wind"])
@@ -142,6 +194,11 @@ func _apply_environment(day_sample: Dictionary, wx: Dictionary) -> void:
 
 
 var _wind_strength := 1.0
+
+
+## Multiplies a colour channel-wise; alpha is left alone.
+static func _tinted(base: Color, factor: Color) -> Color:
+	return Color(base.r * factor.r, base.g * factor.g, base.b * factor.b, base.a)
 
 
 func _apply_wind(env_info: Dictionary, strength: float) -> void:

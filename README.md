@@ -5,6 +5,9 @@ built with **Godot 4.7.2**. Everything you see in the scene — terrain, forest,
 ruins, the hunter, the deer and the HUD — is generated at runtime from Godot
 primitives: the world and HUD in `scripts/main.gd`, the two characters in
 dedicated rig scripts. There are no imported models, textures or audio files yet.
+The wilderness is now ten regions — desert, silver forest, frozen highlands,
+ember lands, ancient ruins, mirage oasis, crystal caves, reflection swamp, sky
+cliffs and the void realm — with one loaded at a time.
 
 > **Status: prototype / vertical slice.** This is not a finished game and there
 > is no distributable APK yet. There is no Android export preset in this
@@ -43,6 +46,7 @@ git-ignored.
 | New hunt | The same button, relabelled `NEW HUNT` after a capture | — (touch button only) |
 | Pause | `PAUSE` button in the top corner: resume, settings, restart, main menu | same button (mouse) |
 | Settings | Sound, graphics quality, language and stick sensitivity; saved between sessions | same screen (mouse) |
+| Travel | Stand at a region's gate and press the `TRAVEL` context button, or open `المناطق` / `REGIONS` from the title or pause screen | same screens (mouse) |
 
 The interface is Arabic by default and fully right to left; English is one tap
 away in Settings and the whole HUD mirrors immediately. Every visible string
@@ -70,6 +74,9 @@ scripts/world/day_cycle.gd       Clock: sun, sky, fog and exposure over a day
 scripts/world/weather.gd         Clear, cloudy, rain and fog, blended over time
 scripts/world/rain.gd            One bounded rain particle emitter
 scripts/world/living_world.gd    Binds clock, weather, wind and wildlife senses
+scripts/world/region_definition.gd  The ten regions as data: palette, habitat, gates
+scripts/world/region_builder.gd      Builds one region: ground, woodland, landmark, gate
+scripts/world/region_manager.gd      Loads/unloads one region and tracks discovery
 shaders/vegetation_wind.gdshader  Vertex wind for trees and grass
 scenes/ui/                  HUD, main menu, pause, settings and confirmation scenes
 scripts/ui/hud.gd            Vitals panel, touch stick, context buttons, toast, safe areas
@@ -83,9 +90,11 @@ scripts/ui/settings_menu.gd  Sound, graphics, language and sensitivity
 scripts/ui/confirm_prompt.gd Restart / return-to-title confirmation
 scripts/ui/deer_marker.gd    Off-screen / distant deer cue
 scripts/ui/audio_panel.gd    Volume sliders and mute, now a section of Settings
+scripts/ui/region_menu.gd    Region list, descriptions, discovery ticks and travel
 scripts/settings/game_settings.gd     Persisted audio, language, graphics, sensitivity
 scripts/settings/graphics_profile.gd  Low/medium/high 3D rendering presets
 scripts/tests/ui_tests.gd    Headless interface, localization, layout and menu suite
+scripts/tests/region_tests.gd  Headless region data, loading, travel and determinism suite
 localization/ui_strings.csv  Every visible string, Arabic and English
 assets/fonts/                Amiri + IBM Plex Sans Arabic with their OFL licences
 scripts/audio/audio_director.gd  Beds, one-shot pool, footsteps and 3D animal audio
@@ -189,6 +198,41 @@ README_AR.md                 Arabic project notes
 - Safe-area insets for notches and rounded corners, and layouts verified from
   800×360 up to a 2048×1536 tablet.
 
+### World regions (Phase 3.6)
+
+- Ten regions, each a dictionary in `scripts/world/region_definition.gd`: a
+  ground palette, a woodland profile, an atmosphere tint, a landmark style, a
+  wildlife habitat and its entry, gate and exits. Nothing about a region is
+  hardcoded in the scene, so a future creature, boss, quest or event can be
+  attached to the same definition without rewriting the world.
+- Region identity: the silver forest is the original Phase 3.1 world, unchanged;
+  the desert is open dunes with two obelisks; the frozen highlands raise ice
+  spires over a frozen pool; the ember lands are basalt columns around a glowing
+  lava crack; the ancient ruins are a colonnade; the mirage oasis has a pool and
+  palms; the crystal caves are an emissive crystal field; the reflection swamp
+  has still water, sunken bridges and planks; the sky cliffs are rock terraces and
+  a rope bridge; the void realm is floating shards around a violet ring.
+- Atmosphere is a tint multiplied over the day/night and weather result, not a
+  replacement for it. A neutral tint leaves every lighting value exactly as the
+  older phases computed it; a region can warm the sun, thicken the fog or push
+  the exposure without ever pausing the clock.
+- One region exists at a time. Loading a new one frees the previous region's
+  nodes immediately, so the peak is one ground, one woodland and one landmark
+  (the heaviest region measures 41 nodes and 23 mesh instances).
+- Travel is safe: breath, the current hunt, its capture count, the language, the
+  settings and the audio volumes all survive a transition. Only the ground, the
+  woodland, the landmark and the uncaught quarry are replaced, and the hunter is
+  placed at the new region's entry point.
+- Discovery is a simple indicator: the HUD shows the region's name and how many
+  of the ten have been seen, and the region screen ticks each one. It is kept in
+  memory for the session (there is no save system yet), so a restart starts the
+  count again.
+- Region definitions declare empty `future` hooks — `creatures`, `bosses`,
+  `quests`, `events` — which this phase fills with nothing on purpose.
+- Hunting balance is untouched: senses, speeds, stamina and the 1.8 m capture
+  reach are the Phase 3.2 values. A region may choose its deer's temperament and
+  a habitat distance band, and the band is clamped to the tuned 16 m floor.
+
 ## Known limitations
 
 These are known and intentionally **not** changed in this baseline phase:
@@ -224,6 +268,16 @@ These are known and intentionally **not** changed in this baseline phase:
   simulated.
 - Scent, wind and tracks are not modelled; the animal senses by sight and sound
   only. There is also no population system, so one deer exists at a time.
+- Region discovery is session-only, and there is no save file for it. Closing
+  the game forgets which regions were seen; the regions themselves are always
+  reachable, so nothing is locked behind the count.
+- A region's wildlife is the same single deer species in a different habitat:
+  the temperament and the spacing change, not the animal. New species and the
+  creatures/bosses the definitions reserve hooks for are later phases.
+- No Phase 3.6 screenshots exist: this environment has no display server, no
+  root to install one, and no software Vulkan driver, so the renderer cannot be
+  started. The region suites verify geometry, budgets and transitions; they do
+  not prove the ten regions look distinct. That check needs a real screen.
 - No Android device or emulator test has been run. Touch feel, on-device
   framerate and colour reproduction on a phone screen are unverified, and the
   draw-call/triangle counts in `TESTING.md` come from a software rasteriser, so
@@ -238,10 +292,11 @@ These are known and intentionally **not** changed in this baseline phase:
 Runs the headless checks — engine version, project import, GDScript parsing,
 startup, repository integrity, seed determinism, the hunting suite, the
 camera/visual suite, the wildlife AI suite, the living world suite, the audio
-suite and the interface suite — and exits non-zero if any of them fail. The
-hunting suite runs 66 checks, the visual suite 53, the wildlife suite 100, the
-living world suite 95, the audio suite 86 and the interface suite 217; the script
-itself reports 156 checks, including every suite's verdict. Full details in
+suite, the interface suite and the world region suite — and exits non-zero if any
+of them fail. The hunting suite runs 66 checks, the visual suite 53, the wildlife
+suite 100, the living world suite 95, the audio suite 86, the interface suite 217
+and the region suite 398; the script itself reports 177 checks, including every
+suite's verdict. Full details in
 [TESTING.md](TESTING.md).
 
 Rendered screenshots are in [docs/screenshots](docs/screenshots/): the world

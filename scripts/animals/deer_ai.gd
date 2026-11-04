@@ -159,11 +159,13 @@ var _dwell := 0.0
 var _life_time := 0.0
 var _home_set := false
 var _rng := RandomNumberGenerator.new()
+var _seed_value := -1
 var _navigation_probe := Callable()
 
 
 ## `seed_value` < 0 randomises (normal play); anything else replays exactly.
 func _init(seed_value: int = -1) -> void:
+	_seed_value = seed_value
 	if seed_value < 0:
 		_rng.randomize()
 	else:
@@ -176,6 +178,20 @@ func _init(seed_value: int = -1) -> void:
 	steering.reset()
 	_graze_dir = _random_direction()
 	_graze_timer = GRAZE_WANDER_INTERVAL * (0.7 + _rng.randf() * 0.6)
+
+
+## Re-rolls the animal for a region's habitat. The senses come from the same
+## blueprint and the same fairness bands; only the temperament and its small
+## trait jitter change, and a seeded run reproduces the same animal.
+func set_habitat(archetype: String, spawn_offset := Vector3.ZERO) -> void:
+	var rng := RandomNumberGenerator.new()
+	if _seed_value >= 0:
+		rng.seed = _seed_value + absi(archetype.hash())
+	else:
+		rng.randomize()
+	profile.setup("deer", DEER_BLUEPRINT, rng, archetype)
+	home_position = spawn_offset
+	_home_set = false
 
 
 ## The scene supplies a Callable(from, to) -> bool that answers "is this path

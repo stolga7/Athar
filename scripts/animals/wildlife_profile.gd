@@ -64,7 +64,7 @@ var base_investigate_distance := 7.0
 ## Fills the profile from a species blueprint, then rolls one deterministic
 ## personality from `rng`. The same generator and seed always gives the same
 ## animal; call it once, in the animal's constructor.
-func setup(species_name: String, blueprint: Dictionary, rng: RandomNumberGenerator) -> void:
+func setup(species_name: String, blueprint: Dictionary, rng: RandomNumberGenerator, forced_archetype := "") -> void:
 	species = species_name
 	vision_range = float(blueprint.get("vision_range", vision_range))
 	vision_angle = float(blueprint.get("vision_angle", vision_angle))
@@ -73,7 +73,7 @@ func setup(species_name: String, blueprint: Dictionary, rng: RandomNumberGenerat
 	memory_time = float(blueprint.get("memory_time", memory_time))
 	recovery_time = float(blueprint.get("recovery_time", recovery_time))
 	investigate_distance = float(blueprint.get("investigate_distance", investigate_distance))
-	_roll(rng)
+	_roll(rng, forced_archetype)
 	base_vision_range = vision_range
 	base_hearing_range = hearing_range
 	base_memory_time = memory_time
@@ -81,8 +81,13 @@ func setup(species_name: String, blueprint: Dictionary, rng: RandomNumberGenerat
 
 
 ## Chooses an archetype and shades its traits. Called once, at construction.
-func _roll(rng: RandomNumberGenerator) -> void:
-	archetype = ARCHETYPES[rng.randi_range(0, ARCHETYPES.size() - 1)]
+func _roll(rng: RandomNumberGenerator, forced_archetype := "") -> void:
+	# A region may state the temperament its habitat produces; otherwise the
+	# seed decides, exactly as before.
+	if forced_archetype in ARCHETYPES:
+		archetype = forced_archetype
+	else:
+		archetype = ARCHETYPES[rng.randi_range(0, ARCHETYPES.size() - 1)]
 	var traits: Dictionary = TRAITS[archetype]
 	vision_angle = clampf(vision_angle * float(traits["fov"]), 200.0, 340.0)
 	hearing_range = hearing_range * float(traits["hearing"]) * _jitter(rng)

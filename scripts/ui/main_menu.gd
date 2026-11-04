@@ -7,6 +7,7 @@ extends Control
 
 signal begin_pressed
 signal settings_pressed
+signal regions_pressed
 signal quit_pressed
 
 const UiKit := preload("res://scripts/ui/ui_kit.gd")
@@ -16,6 +17,7 @@ var panel: PanelContainer
 var content: VBoxContainer
 var begin_button: Button
 var settings_button: Button
+var regions_button: Button
 var quit_button: Button
 
 var _built := false
@@ -58,6 +60,11 @@ func _build() -> void:
 	begin_button.name = "BeginButton"
 	begin_button.pressed.connect(func() -> void: begin_pressed.emit())
 	content.add_child(begin_button)
+
+	regions_button = UiKit.button("menu.regions")
+	regions_button.name = "RegionsButton"
+	regions_button.pressed.connect(func() -> void: regions_pressed.emit())
+	content.add_child(regions_button)
 
 	settings_button = UiKit.button("menu.settings")
 	settings_button.name = "MenuSettingsButton"

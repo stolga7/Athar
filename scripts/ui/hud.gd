@@ -41,6 +41,7 @@ var panel: PanelContainer
 var status_label: Label
 var info_label: Label
 var title_label: Label
+var region_label: Label
 var stamina_bar: Control
 var condition_bar: Control
 var alert_bar: Control
@@ -62,6 +63,9 @@ var _action_key := "hud.action.hunt"
 var _interact_key := ""
 var _toast_key := ""
 var _toast_arg := -1
+var _region_key := ""
+var _region_visited := 0
+var _region_total := 0
 
 
 func _ready() -> void:
@@ -113,6 +117,13 @@ func _build() -> void:
 	# with tall metrics stretch the vitals panel.
 	title_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	column.add_child(title_label)
+
+	# Which of the ten regions the hunter is standing in, and how many have been
+	# seen. Rebuilt from keys like the info line, so it reads in both languages.
+	region_label = UiKit.label("hud.region", "Caption")
+	region_label.name = "Region"
+	region_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	column.add_child(region_label)
 
 	status_label = UiKit.label("hud.initial_status", "Subhead")
 	status_label.name = "Status"
@@ -212,6 +223,34 @@ func set_status_key(key: String) -> void:
 ## Restores whichever status message was last shown, used after a language change.
 func current_status_key() -> String:
 	return _status_key
+
+
+## The region line: the loaded region's name plus the discovery count. `key` is
+## the region's own name key, so a language switch only needs `retranslate()`.
+func set_region(key: String, visited: int, total: int) -> void:
+	_region_key = key
+	_region_visited = visited
+	_region_total = total
+	_refresh_region()
+
+
+func region_key() -> String:
+	return _region_key
+
+
+func region_text() -> String:
+	return region_label.text if region_label != null else ""
+
+
+func _refresh_region() -> void:
+	if region_label == null:
+		return
+	region_label.visible = not _compact and not _region_key.is_empty()
+	if _region_key.is_empty():
+		return
+	var progress := Localization.text("hud.region.progress") % [_region_visited, _region_total]
+	region_label.text = "%s  •  %s" % [Localization.text(_region_key), progress]
+	region_label.horizontal_alignment = Localization.text_alignment()
 
 
 ## The information line is built from translation keys (clock, day phase, weather,
@@ -345,6 +384,7 @@ func layout_for(viewport_size: Vector2) -> void:
 	# player needs: the message and the vitals, without the title and the clock.
 	_compact = shortest < 420.0
 	title_label.visible = not _compact
+	region_label.visible = not _compact and not _region_key.is_empty()
 	info_label.visible = not _compact
 	status_label.custom_minimum_size = Vector2(0, 0 if _compact else 44)
 
@@ -356,6 +396,7 @@ func layout_for(viewport_size: Vector2) -> void:
 	var text_width := maxf(panel_width - 40.0, 96.0)
 	status_label.custom_minimum_size.x = text_width
 	title_label.custom_minimum_size.x = text_width
+	region_label.custom_minimum_size.x = text_width
 	info_label.custom_minimum_size.x = text_width
 	panel.size = Vector2(maxf(panel_width, PANEL_MIN_WIDTH * 0.8), 0.0)
 	panel.position = Vector2(viewport_size.x - panel_width - right, top) if rtl else Vector2(left, top)
@@ -425,6 +466,7 @@ func retranslate() -> void:
 	UiKit.retranslate(self)
 	layout_direction = Localization.layout_direction()
 	_refresh_info()
+	_refresh_region()
 	set_status_key(_status_key)
 	set_action_key(_action_key)
 	set_interact_key(_interact_key)

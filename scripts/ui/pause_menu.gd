@@ -7,6 +7,7 @@ extends Control
 
 signal resume_pressed
 signal settings_pressed
+signal regions_pressed
 signal restart_pressed
 signal menu_pressed
 
@@ -17,6 +18,7 @@ var panel: PanelContainer
 var content: VBoxContainer
 var resume_button: Button
 var settings_button: Button
+var regions_button: Button
 var restart_button: Button
 var menu_button: Button
 
@@ -49,6 +51,11 @@ func _build() -> void:
 	settings_button.name = "PauseSettingsButton"
 	settings_button.pressed.connect(func() -> void: settings_pressed.emit())
 	content.add_child(settings_button)
+
+	regions_button = UiKit.button("menu.travel")
+	regions_button.name = "RegionsButton"
+	regions_button.pressed.connect(func() -> void: regions_pressed.emit())
+	content.add_child(regions_button)
 
 	restart_button = UiKit.button("menu.restart")
 	restart_button.name = "RestartButton"

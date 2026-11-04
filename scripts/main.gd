@@ -21,12 +21,15 @@ const LivingWorld := preload("res://scripts/world/living_world.gd")
 const AudioDirector := preload("res://scripts/audio/audio_director.gd")
 const GameSettings := preload("res://scripts/settings/game_settings.gd")
 const GraphicsProfile := preload("res://scripts/settings/graphics_profile.gd")
+const RegionManager := preload("res://scripts/world/region_manager.gd")
+const RegionDefinition := preload("res://scripts/world/region_definition.gd")
 const Localization := preload("res://scripts/ui/localization.gd")
 const UiKit := preload("res://scripts/ui/ui_kit.gd")
 const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 const MAIN_MENU_SCENE := preload("res://scenes/ui/main_menu.tscn")
 const PAUSE_MENU_SCENE := preload("res://scenes/ui/pause_menu.tscn")
 const SETTINGS_MENU_SCENE := preload("res://scenes/ui/settings_menu.tscn")
+const REGION_MENU_SCENE := preload("res://scenes/ui/region_menu.tscn")
 const CONFIRM_SCENE := preload("res://scenes/ui/confirm_prompt.tscn")
 
 const WORLD_SIZE := 90.0
@@ -42,6 +45,8 @@ const DEER_LIMIT := 41.0
 ## Where a freshly started hunt drops the deer, measured from the hunter.
 const NEW_HUNT_MIN_DISTANCE := 16.0
 const NEW_HUNT_MAX_DISTANCE := 26.0
+## How close the hunter must stand to a region's gate for the travel prompt.
+const GATE_RADIUS := 3.2
 
 var hunter: CharacterBody3D
 var deer: CharacterBody3D
@@ -86,6 +91,13 @@ var joystick_vector := Vector2.ZERO
 ## the tree, so timers, audio and the menus themselves keep running.
 var game_state := STATE_PLAYING
 var pending_action := ""
+## The ten explorable regions: one loaded at a time, everything else preserved.
+var regions: RefCounted
+var region_menu: Control
+var _region_return := "gate"
+var _suppress_region_closed := false
+## What the context button does right now: "capture", "travel" or nothing.
+var interact_mode := ""
 var settings_opened_from_main := false
 var _hunt_abandoned := false
 var _suppress_settings_closed := false
@@ -126,6 +138,7 @@ func _ready() -> void:
 	_build_hud()
 	_build_menus()
 	_build_audio()
+	_update_region_hud()
 	deer_ai.state_changed.connect(_on_deer_state_changed)
 	hunt_session.deer_captured.connect(_on_deer_captured)
 	_update_status("hud.initial_status")
@@ -146,45 +159,28 @@ func _setup_input() -> void:
 	for action in ["move_forward", "move_back", "move_left", "move_right"]:
 		if not InputMap.has_action(action): InputMap.add_action(action)
 
-func _mat(color: Color, roughness := 0.9) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = roughness
-	return m
-
-func _mesh_node(parent: Node, mesh: Mesh, material: Material, pos: Vector3, scale := Vector3.ONE) -> MeshInstance3D:
-	var n := MeshInstance3D.new()
-	n.mesh = mesh
-	n.material_override = material
-	n.position = pos
-	n.scale = scale
-	parent.add_child(n)
-	return n
-
 func _build_environment() -> void:
 	environment_info = WildsEnvironment.build(self)
 
 func _build_world() -> void:
-	# One generator for the whole world, seeded from the global RNG: a test seed
-	# still reproduces the forest, stones and grass exactly.
-	var world_rng := RandomNumberGenerator.new()
-	world_rng.seed = randi()
-	ground_info = WildsGround.build(self, world_rng)
-	forest_info = Forest.build(self, world_rng)
-	# The weather shader drives the single tree material shared by every variant.
-	environment_info["foliage_material"] = forest_info.get("material", null)
-	# A small ruined stone arch gives the clearing a landmark.
-	_create_ruin(Vector3(-10, 0, -15))
+	# The region manager owns everything that changes when the player travels; the
+	# hunter, deer, camera and audio are built on top of it and never rebuilt.
+	regions = RegionManager.new()
+	regions.setup(self, environment_info, _seed_value if test_seed_active else -1)
+	var result: Dictionary = regions.load_region(RegionManager.DEFAULT_REGION)
+	if not result.get("ok", false):
+		push_error("ATHAR: the default region failed to load: %s" % regions.last_error)
+		return
+	_adopt_region(result["info"])
 
-func _create_ruin(p: Vector3) -> void:
-	var stone := _mat(Color(0.175, 0.185, 0.165))
-	for x in [-2.2, 2.2]:
-		var pillar := BoxMesh.new()
-		pillar.size = Vector3(0.8, 4.2, 0.9)
-		_mesh_node(self, pillar, stone, p + Vector3(x, 2.1, 0))
-	var lintel := BoxMesh.new()
-	lintel.size = Vector3(5.2, 0.8, 1.0)
-	_mesh_node(self, lintel, stone, p + Vector3(0, 4.2, 0))
+
+## Points the scene's public references at the region that is now loaded, so the
+## tests and the tools keep reading `ground_info` / `forest_info` as before.
+func _adopt_region(info: Dictionary) -> void:
+	ground_info = info["ground_info"]
+	forest_info = info["forest_info"]
+	environment_info["foliage_material"] = forest_info.get("material", null)
+
 
 # --------------------------------------------------------------- the hunter ---
 func _build_hunter() -> void:
@@ -228,6 +224,7 @@ func _build_deer() -> void:
 	# The AI is pure logic; these two probes are how it asks the physics world
 	# whether a trunk blocks its line of sight or its next step.
 	deer_ai.set_navigation_probe(_deer_path_blocked)
+	_apply_region_habitat()
 
 func _active_seed() -> int:
 	return int(_seed_value) if test_seed_active else -1
@@ -247,6 +244,10 @@ func _build_camera() -> void:
 func _build_living_world() -> void:
 	living_world = LivingWorld.new()
 	living_world.setup(environment_info, ground_info, _active_seed())
+	# The region tint is a modifier over the clock, so it can only be installed
+	# once the clock exists.
+	if regions != null:
+		regions.attach_living_world(living_world)
 	_apply_wildlife_environment()
 
 
@@ -310,14 +311,20 @@ func _build_menus() -> void:
 	settings_menu.setup(audio_settings)
 	confirm_prompt = CONFIRM_SCENE.instantiate()
 	menu_layer.add_child(confirm_prompt)
+	region_menu = REGION_MENU_SCENE.instantiate()
+	menu_layer.add_child(region_menu)
 
 	main_menu.begin_pressed.connect(start_game)
 	main_menu.settings_pressed.connect(func() -> void: open_settings(true))
+	main_menu.regions_pressed.connect(func() -> void: open_region_menu("main"))
 	main_menu.quit_pressed.connect(func() -> void: get_tree().quit())
 	pause_menu.resume_pressed.connect(resume_game)
 	pause_menu.settings_pressed.connect(func() -> void: open_settings(false))
 	pause_menu.restart_pressed.connect(request_restart)
 	pause_menu.menu_pressed.connect(request_return_to_menu)
+	pause_menu.regions_pressed.connect(func() -> void: open_region_menu("pause"))
+	region_menu.travel_requested.connect(_on_region_chosen)
+	region_menu.closed.connect(_on_region_menu_closed)
 	settings_menu.closed.connect(_on_settings_closed)
 	settings_menu.language_changed.connect(_on_language_changed)
 	settings_menu.quality_changed.connect(_apply_graphics)
@@ -507,9 +514,14 @@ func _start_new_hunt() -> void:
 	_update_status("status.new_hunt")
 
 func _pick_deer_spot() -> Vector3:
+	# Regions may ask for a different habitat range, but never a closer one than
+	# the Phase 3.2 fairness floor: a deer must not spawn in the player's lap.
+	var habitat := _region_habitat()
+	var min_distance := maxf(float(habitat.get("spawn_min", NEW_HUNT_MIN_DISTANCE)), NEW_HUNT_MIN_DISTANCE)
+	var max_distance := maxf(float(habitat.get("spawn_max", NEW_HUNT_MAX_DISTANCE)), min_distance)
 	for attempt in range(20):
 		var angle := randf() * TAU
-		var radius := randf_range(NEW_HUNT_MIN_DISTANCE, NEW_HUNT_MAX_DISTANCE)
+		var radius := randf_range(min_distance, max_distance)
 		var spot := hunter.global_position + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
 		if absf(spot.x) <= 38.0 and absf(spot.z) <= 38.0:
 			return Vector3(spot.x, 0.1, spot.z)
@@ -608,19 +620,32 @@ func _update_context() -> void:
 		return
 	if captured:
 		hud.set_action_key("hud.action.new_hunt")
-		hud.set_interact_key("")
+		hud.set_interact_key("regions.travel" if _near_gate() else "")
+		interact_mode = "travel" if _near_gate() else ""
 		return
 	hud.set_action_key("hud.action.hunt")
 	var distance := hunter.global_position.distance_to(deer.global_position)
-	hud.set_interact_key("hud.capture" if hunt_session.distance_in_reach(distance) else "")
+	if hunt_session.distance_in_reach(distance):
+		interact_mode = "capture"
+		hud.set_interact_key("hud.capture")
+	elif _near_gate():
+		interact_mode = "travel"
+		hud.set_interact_key("regions.travel")
+	else:
+		interact_mode = ""
+		hud.set_interact_key("")
 
 
 func _on_stick_moved(value: Vector2) -> void:
 	joystick_vector = value
 
 
-## The context button does one thing: take the deer when it is within reach.
+## The context button takes the deer when it is within reach, and opens the
+## region screen when the player is standing at a gate.
 func _on_interact_pressed() -> void:
+	if interact_mode == "travel":
+		open_region_menu("gate")
+		return
 	if deer == null or hunt_session == null:
 		return
 	var distance := hunter.global_position.distance_to(deer.global_position)
@@ -628,6 +653,160 @@ func _on_interact_pressed() -> void:
 		hunt_session.try_capture(distance)
 	elif hud != null:
 		hud.toast("toast.too_far", int(distance))
+
+
+# ----------------------------------------------------------------- regions ---
+## The loaded region's definition, or an empty dictionary before the world exists.
+func current_region() -> Dictionary:
+	if regions == null or regions.region_info.is_empty():
+		return {}
+	return regions.region_info["region"]
+
+
+func current_region_id() -> String:
+	return regions.active_id if regions != null else ""
+
+
+func _region_habitat() -> Dictionary:
+	return current_region().get("habitat", {})
+
+
+## Applies the loaded region's wildlife habitat. Only the temperament changes: the
+## senses, speeds and capture distance are the tuned Phase 3.2 values, so travel
+## never alters hunting balance.
+func _apply_region_habitat() -> void:
+	if deer_ai == null:
+		return
+	var archetype := String(_region_habitat().get("archetype", ""))
+	if not archetype.is_empty():
+		deer_ai.set_habitat(archetype)
+	if living_world != null:
+		_apply_wildlife_environment()
+
+
+## Re-places the deer for the region that just loaded. A secured quarry stays
+## secured: its capture is player state too, and travel must not erase it.
+func _respawn_quarry() -> void:
+	if deer == null or deer_ai == null or hunt_session == null:
+		return
+	if hunt_session.is_captured:
+		return
+	deer.global_position = _pick_deer_spot()
+	deer.velocity = Vector3.ZERO
+	deer.rotation.y = randf() * TAU
+	deer.visible = true
+	_set_deer_collision(true)
+	deer_ai.reset()
+	deer_rig.set_state(DeerAI.GRAZING)
+
+
+## Moves the player to another region. Everything that belongs to the player —
+## breath, the hunt and its capture count, settings, language, audio — survives;
+## only the ground, the woodland, the landmark and the quarry are replaced.
+func travel_to(id: String) -> bool:
+	if regions == null or hunter == null or not regions.can_enter(id):
+		return false
+	if id == regions.active_id:
+		return false
+	set_physics_process(false)
+	if hud != null:
+		hud.release_controls()
+	var kept_stamina := stamina
+	var result: Dictionary = regions.load_region(id)
+	if not result.get("ok", false):
+		set_physics_process(true)
+		if hud != null:
+			hud.toast("toast.region_missing")
+		return false
+	_adopt_region(result["info"])
+	hunter.global_position = regions.entry_point()
+	hunter.velocity = Vector3.ZERO
+	stamina = kept_stamina
+	_apply_region_habitat()
+	_respawn_quarry()
+	if camera_rig != null:
+		camera_rig.snap_to(hunter.global_position, hunter.rotation.y)
+	_sync_audio_environment()
+	_update_region_hud()
+	if audio != null:
+		audio.play_ui_tap()
+	if hud != null:
+		hud.toast("toast.region")
+	_update_status("status.region_entered")
+	set_physics_process(true)
+	return true
+
+
+func _update_region_hud() -> void:
+	if hud == null or regions == null:
+		return
+	var summary: Dictionary = regions.current_summary()
+	if summary.is_empty():
+		return
+	hud.set_region(String(summary["name_key"]), int(summary["discovered"]), int(summary["total"]))
+
+
+func _near_gate() -> bool:
+	if regions == null or hunter == null or regions.gate_position == Vector3.ZERO:
+		return false
+	return hunter.global_position.distance_to(regions.gate_position) <= GATE_RADIUS
+
+
+func open_region_menu(from := "gate") -> void:
+	if region_menu == null or regions == null:
+		return
+	_region_return = from
+	game_state = STATE_MENU
+	set_physics_process(false)
+	if hud != null:
+		hud.release_controls()
+	main_menu.close()
+	pause_menu.close()
+	settings_menu.close()
+	confirm_prompt.dismiss()
+	region_menu.open(regions.region_listing())
+	if audio != null:
+		audio.play_ui_tap()
+
+
+func _on_region_chosen(id: String) -> void:
+	var travelled := travel_to(id)
+	_suppress_region_closed = true
+	region_menu.close()
+	_suppress_region_closed = false
+	game_state = STATE_PLAYING
+	set_physics_process(true)
+	if travelled:
+		_update_region_hud()
+		return
+	# Same region, or a refused transition: put the player back where they were.
+	if _region_return == "pause":
+		game_state = STATE_MENU
+		set_physics_process(false)
+		pause_menu.open()
+	elif _region_return == "main":
+		game_state = STATE_MENU
+		set_physics_process(false)
+		main_menu.open()
+	else:
+		_update_status("hud.initial_status")
+
+
+func _on_region_menu_closed() -> void:
+	if _suppress_region_closed:
+		return
+	region_menu.close()
+	if _region_return == "pause":
+		pause_menu.open()
+		game_state = STATE_MENU
+		set_physics_process(false)
+	elif _region_return == "main":
+		main_menu.open()
+		game_state = STATE_MENU
+		set_physics_process(false)
+	else:
+		game_state = STATE_PLAYING
+		set_physics_process(true)
 
 
 # ------------------------------------------------------------------ menus ----
@@ -758,9 +937,10 @@ func _on_language_changed(code: String) -> void:
 
 
 func _retranslate_ui() -> void:
-	for ui in [hud, main_menu, pause_menu, settings_menu, confirm_prompt]:
+	for ui in [hud, main_menu, pause_menu, settings_menu, confirm_prompt, region_menu]:
 		if ui != null:
 			ui.retranslate()
+	_update_region_hud()
 
 
 func _apply_graphics(level: String) -> void:

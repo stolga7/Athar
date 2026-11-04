@@ -43,8 +43,29 @@ const TUFT_BASE := Color(0.088, 0.132, 0.068)
 const TUFT_TIP := Color(0.158, 0.216, 0.108)
 
 
+## Merges a region palette over the silver-forest defaults, so a caller that
+## passes nothing gets exactly the Phase 3.1 ground and a region only overrides
+## what gives it its identity.
+static func palette_colors(palette: Dictionary) -> Dictionary:
+	return {
+		"dark": palette.get("dark", GROUND_DARK),
+		"moss": palette.get("moss", GROUND_MOSS),
+		"grass": palette.get("grass", GROUND_GRASS),
+		"dry": palette.get("dry", GROUND_DRY),
+		"backdrop": palette.get("backdrop", GROUND_MOSS.darkened(0.15)),
+		"roughness": float(palette.get("roughness", 0.96)),
+		"stone": palette.get("stone", Color(0.22, 0.25, 0.21)),
+		"tuft_base": palette.get("tuft_base", TUFT_BASE),
+		"tuft_tip": palette.get("tuft_tip", TUFT_TIP),
+		"tuft_count": int(palette.get("tuft_count", TUFT_COUNT)),
+		"stone_count": int(palette.get("stone_count", STONE_COUNT)),
+		"noise_seed": int(palette.get("noise_seed", NOISE_SEED)),
+	}
+
+
 ## Adds the ground body, its surface and the clutter, and returns a summary.
-static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
+static func build(parent: Node3D, rng: RandomNumberGenerator, palette := {}) -> Dictionary:
+	var colors := palette_colors(palette)
 	var ground_body := StaticBody3D.new()
 	ground_body.name = "ForestGround"
 	parent.add_child(ground_body)
@@ -55,7 +76,7 @@ static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 	var ground := MeshInstance3D.new()
 	ground.name = "GroundSurface"
 	ground.mesh = plane
-	ground.material_override = _ground_material()
+	ground.material_override = _ground_material(colors)
 	ground.scale = Vector3.ONE
 	ground_body.add_child(ground)
 
@@ -73,14 +94,14 @@ static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 	backdrop_plane.size = Vector2(BACKDROP_SIZE, BACKDROP_SIZE)
 	backdrop.mesh = backdrop_plane
 	var backdrop_mat := StandardMaterial3D.new()
-	backdrop_mat.albedo_color = GROUND_MOSS.darkened(0.15)
+	backdrop_mat.albedo_color = (colors["backdrop"] as Color)
 	backdrop_mat.roughness = 1.0
 	backdrop.material_override = backdrop_mat
 	backdrop.position.y = -0.05
 	parent.add_child(backdrop)
 
-	var stones := _stone_batch(parent, rng)
-	var tufts := _tuft_batch(parent, rng)
+	var stones := _stone_batch(parent, rng, colors)
+	var tufts := _tuft_batch(parent, rng, colors)
 
 	return {
 		"ground_body": ground_body,
@@ -93,23 +114,23 @@ static func build(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
 	}
 
 
-static func _ground_material() -> StandardMaterial3D:
+static func _ground_material(colors: Dictionary) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(1, 1, 1)
-	mat.albedo_texture = _albedo_texture()
+	mat.albedo_texture = _albedo_texture(colors)
 	mat.normal_enabled = true
 	mat.normal_texture = _normal_texture()
 	mat.normal_scale = 0.65
-	mat.roughness = 0.96
+	mat.roughness = float(colors["roughness"])
 	mat.metallic_specular = 0.18
 	mat.uv1_scale = Vector3(ALBEDO_TILE, ALBEDO_TILE, 1.0)
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return mat
 
 
-static func _albedo_texture() -> NoiseTexture2D:
+static func _albedo_texture(colors: Dictionary) -> NoiseTexture2D:
 	var noise := FastNoiseLite.new()
-	noise.seed = NOISE_SEED
+	noise.seed = int(colors["noise_seed"])
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	noise.frequency = 0.018
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
@@ -118,12 +139,16 @@ static func _albedo_texture() -> NoiseTexture2D:
 
 	var ramp := Gradient.new()
 	ramp.offsets = PackedFloat32Array([0.0, 0.34, 0.62, 0.85, 1.0])
+	var dark: Color = colors["dark"]
+	var moss: Color = colors["moss"]
+	var grass: Color = colors["grass"]
+	var dry: Color = colors["dry"]
 	ramp.colors = PackedColorArray([
-		GROUND_DARK,
-		GROUND_MOSS,
-		GROUND_GRASS,
-		GROUND_DRY,
-		GROUND_GRASS.lerp(GROUND_DRY, 0.65),
+		dark,
+		moss,
+		grass,
+		dry,
+		grass.lerp(dry, 0.65),
 	])
 
 	var tex := NoiseTexture2D.new()
@@ -153,14 +178,15 @@ static func _normal_texture() -> NoiseTexture2D:
 
 
 ## Scattered low-poly stones: one batch, no collision, sat just above the ground.
-static func _stone_batch(parent: Node3D, rng: RandomNumberGenerator) -> int:
-	var mesh := _mossy_mesh(0.34, 8, 5)
+static func _stone_batch(parent: Node3D, rng: RandomNumberGenerator, colors: Dictionary) -> int:
+	var mesh := _mossy_mesh(0.34, 8, 5, colors["stone"])
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
 	var transforms: Array[Transform3D] = []
 	var attempts := 0
-	while transforms.size() < STONE_COUNT and attempts < STONE_COUNT * 20:
+	var wanted := int(colors["stone_count"])
+	while transforms.size() < wanted and attempts < wanted * 20:
 		attempts += 1
 		var x := rng.randf_range(-42.0, 42.0)
 		var z := rng.randf_range(-42.0, 42.0)
@@ -182,8 +208,8 @@ static func _stone_batch(parent: Node3D, rng: RandomNumberGenerator) -> int:
 ## Grass clumps: three crossed tapered blades per tuft, one MultiMesh batch, no
 ## shadows and no collision. They are ground detail at knee height; the wind
 ## shader gives them the strongest sway in the scene because they are lightest.
-static func _tuft_batch(parent: Node3D, rng: RandomNumberGenerator) -> Dictionary:
-	var mesh := _tuft_mesh()
+static func _tuft_batch(parent: Node3D, rng: RandomNumberGenerator, colors: Dictionary) -> Dictionary:
+	var mesh := _tuft_mesh(colors["tuft_base"], colors["tuft_tip"])
 	var material := ShaderMaterial.new()
 	mesh.surface_set_material(0, material)
 	material.shader = WIND_SHADER
@@ -199,7 +225,8 @@ static func _tuft_batch(parent: Node3D, rng: RandomNumberGenerator) -> Dictionar
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
 	var transforms: Array[Transform3D] = []
-	while transforms.size() < TUFT_COUNT:
+	var wanted := int(colors["tuft_count"])
+	while transforms.size() < wanted:
 		var x := rng.randf_range(-44.0, 44.0)
 		var z := rng.randf_range(-44.0, 44.0)
 		# Keep the hunter's spawn pocket and the ruin courtyard tidy.
@@ -225,7 +252,7 @@ static func _tuft_batch(parent: Node3D, rng: RandomNumberGenerator) -> Dictionar
 
 ## One tuft: three tapered quads crossed at 60 degrees, dark at the root and
 ## greener at the tip so the clump reads as grass rather than a spike.
-static func _tuft_mesh() -> ArrayMesh:
+static func _tuft_mesh(bottom: Color, top: Color) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for blade in range(3):
@@ -237,7 +264,7 @@ static func _tuft_mesh() -> ArrayMesh:
 		var base_r := side
 		var tip_l := -side * 0.35 + lean + Vector3(0, 0.235, 0)
 		var tip_r := side * 0.35 + lean + Vector3(0, 0.235, 0)
-		_quad(st, base, base_r, tip_r, tip_l, TUFT_BASE, TUFT_TIP)
+		_quad(st, base, base_r, tip_r, tip_l, bottom, top)
 	st.generate_normals()
 	return st.commit()
 
@@ -258,14 +285,14 @@ static func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector
 	st.add_vertex(d)
 
 
-static func _mossy_mesh(radius: float, segments: int, rings: int) -> SphereMesh:
+static func _mossy_mesh(radius: float, segments: int, rings: int, color: Color) -> SphereMesh:
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
 	mesh.height = radius * 1.4
 	mesh.radial_segments = segments
 	mesh.rings = rings
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.22, 0.25, 0.21)
+	mat.albedo_color = color
 	mat.roughness = 0.94
 	mesh.material = mat
 	return mesh

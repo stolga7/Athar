@@ -7,7 +7,7 @@ menu.settings,الإعدادات,SETTINGS
 menu.restart,إعادة الصيد,RESTART HUNT
 menu.main_menu,القائمة الرئيسية,MAIN MENU
 menu.quit,إنهاء اللعبة,QUIT GAME
-menu.version,المرحلة 3.5 — نموذج أوّلي,Phase 3.5 — prototype
+menu.version,المرحلة 3.6 — نموذج أوّلي,Phase 3.6 — prototype
 pause.title,توقّف مؤقت,PAUSED
 confirm.return.title,العودة إلى القائمة الرئيسية؟,Return to the main menu?
 confirm.return.body,ستُفقد الجولة الحالية ولا يمكن استعادتها.,The current hunt will be lost and cannot be restored.
@@ -78,3 +78,39 @@ status.new_hunt,غزال جديد دخل الساحة. اقترب بهدوء.,A 
 toast.too_far,بعيد جدًا — %d م,Too far — %d m
 toast.captured,أُمسِك الغزال,Deer captured
 toast.new_hunt,غزال جديد في الساحة,A new deer is near
+menu.regions,المناطق,REGIONS
+menu.travel,السفر بين المناطق,TRAVEL
+hud.region,المنطقة,Region
+hud.region.progress,%d/%d,%d/%d
+status.region_entered,وصلت إلى منطقة جديدة. خذ لحظة لتتعرف عليها.,You have entered a new region. Take a moment to learn it.
+toast.region,منطقة جديدة,New region
+toast.region_missing,هذه المنطقة غير متاحة الآن.,That region is not available.
+regions.title,المناطق,REGIONS
+regions.subtitle,عشرة عوالم في برية واحدة,Ten worlds in one wilderness
+regions.travel,سافر,TRAVEL
+regions.current,أنت هنا,YOU ARE HERE
+regions.visited,مُكتشفة,Discovered
+regions.unvisited,لم تُكتشف,Undiscovered
+regions.progress,%d من %d,%d of %d
+regions.back,رجوع,BACK
+regions.locked,مغلقة,Locked
+region.desert.name,الصحراء الكبرى,Great Desert
+region.desert.desc,كثبان ذهبية وشجيرات جافة. الأثر يبقى ظاهرًا في الرمل.,Golden dunes and dry scrub. Tracks linger in the sand.
+region.silver_forest.name,الغابة الفضية,Silver Forest
+region.silver_forest.desc,غابة كثيفة تحجب الضوء. موطن الغزلان وأرض البداية.,Dense woodland that holds the light. Home of the deer and the starting ground.
+region.frozen_highlands.name,المرتفعات المتجمدة,Frozen Highlands
+region.frozen_highlands.desc,ثلج وأعمدة جليد وضوء باهت. الغزلان هنا أكثر يقظة.,Snow and ice spires under pale light — the deer here are warier.
+region.ember_lands.name,أرض الجمر,Ember Lands
+region.ember_lands.desc,بازلت متصدع وحمم متوهجة. الهواء ثقيل والدخان قريب.,Cracked basalt and glowing lava. The air is heavy and the smoke is close.
+region.ancient_ruins.name,الأطلال القديمة,Ancient Ruins
+region.ancient_ruins.desc,أعمدة مكسورة وألواح ساقطة. من بنى هذا؟ ولماذا رحل؟,Broken columns and fallen slabs — who built this and why did they leave?
+region.mirage_oasis.name,واحة السراب,Mirage Oasis
+region.mirage_oasis.desc,ماء تحت النخيل ومسارات تخدع العين. لا تثق بالخط المستقيم.,Water beneath the palms and paths that fool the eye. Do not trust a straight line.
+region.crystal_caves.name,كهوف البلور,Crystal Caves
+region.crystal_caves.desc,بلور مضيء في العتمة. الصوت يعود إليك من كل جهة.,Glowing crystal in the dark. Every sound comes back to you.
+region.reflection_swamp.name,مستنقع الانعكاس,Reflection Swamp
+region.reflection_swamp.desc,مياه راكدة وجسور غارقة. ما تراه في الماء ليس دائمًا هناك.,Still water and sunken bridges. What you see in the water is not always there.
+region.sky_cliffs.name,جروف السماء,Sky Cliffs
+region.sky_cliffs.desc,مصاطب صخرية عالية وجسر حبال. الريح تحمل رائحة الغزلان بعيدًا.,High rock terraces and a rope bridge. The wind carries the deer's scent away.
+region.void_realm.name,عالم الفراغ,Void Realm
+region.void_realm.desc,حجارة طافية وضوء بنفسجي. هنا تصمت البرية.,Floating stone and violet light. Here the wilderness goes quiet.

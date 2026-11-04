@@ -185,7 +185,7 @@ fi
 
 # ----------------------------------------------------- E. repository integrity
 section "E. Repository integrity"
-for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tests/world_tests.tscn scenes/tests/audio_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scenes/tools/world_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/world/day_cycle.gd scripts/world/weather.gd scripts/world/rain.gd scripts/world/living_world.gd scripts/tests/world_tests.gd scripts/tests/audio_tests.gd scripts/tools/world_shots.gd scripts/audio/audio_director.gd scripts/audio/audio_settings.gd scripts/ui/audio_panel.gd scripts/ui/hud.gd scripts/ui/localization.gd scripts/ui/ui_kit.gd scripts/ui/virtual_joystick.gd scripts/ui/vitals_bar.gd scripts/ui/main_menu.gd scripts/ui/pause_menu.gd scripts/ui/settings_menu.gd scripts/ui/confirm_prompt.gd scripts/settings/game_settings.gd scripts/settings/graphics_profile.gd scripts/tests/ui_tests.gd scenes/tests/ui_tests.tscn scenes/ui/hud.tscn scenes/ui/main_menu.tscn scenes/ui/pause_menu.tscn scenes/ui/settings_menu.tscn scenes/ui/confirm_prompt.tscn localization/ui_strings.csv assets/fonts/Amiri-Bold.ttf assets/fonts/IBMPlexSansArabic-Regular.ttf assets/fonts/IBMPlexSansArabic-SemiBold.ttf assets/fonts/OFL-Amiri.txt assets/fonts/OFL-IBMPlexSansArabic.txt audio/default_bus_layout.tres tools/generate_audio.py assets/audio/LICENSE.txt shaders/vegetation_wind.gdshader scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
+for required in project.godot scenes/main.tscn scenes/tests/hunting_tests.tscn scenes/tests/visual_tests.tscn scenes/tests/wildlife_tests.tscn scenes/tests/world_tests.tscn scenes/tests/audio_tests.tscn scenes/tools/capture_shots.tscn scenes/tools/behaviour_shots.tscn scenes/tools/world_shots.tscn scripts/main.gd scripts/animals/deer_ai.gd scripts/animals/wildlife_profile.gd scripts/animals/wildlife_perception.gd scripts/animals/wildlife_steering.gd scripts/gameplay/hunt_session.gd scripts/tests/hunting_tests.gd scripts/tests/visual_tests.gd scripts/tests/wildlife_tests.gd scripts/tools/behaviour_shots.gd scripts/world/day_cycle.gd scripts/world/weather.gd scripts/world/rain.gd scripts/world/living_world.gd scripts/tests/world_tests.gd scripts/tests/audio_tests.gd scripts/tools/world_shots.gd scripts/audio/audio_director.gd scripts/audio/audio_settings.gd scripts/ui/audio_panel.gd scripts/ui/hud.gd scripts/ui/localization.gd scripts/ui/ui_kit.gd scripts/ui/virtual_joystick.gd scripts/ui/vitals_bar.gd scripts/ui/main_menu.gd scripts/ui/pause_menu.gd scripts/ui/settings_menu.gd scripts/ui/confirm_prompt.gd scripts/settings/game_settings.gd scripts/settings/graphics_profile.gd scripts/tests/ui_tests.gd scenes/tests/ui_tests.tscn scenes/ui/hud.tscn scenes/ui/main_menu.tscn scenes/ui/pause_menu.tscn scenes/ui/settings_menu.tscn scenes/ui/confirm_prompt.tscn scripts/world/region_definition.gd scripts/world/region_builder.gd scripts/world/region_manager.gd scripts/ui/region_menu.gd scenes/ui/region_menu.tscn scripts/tests/region_tests.gd scenes/tests/region_tests.tscn localization/ui_strings.csv assets/fonts/Amiri-Bold.ttf assets/fonts/IBMPlexSansArabic-Regular.ttf assets/fonts/IBMPlexSansArabic-SemiBold.ttf assets/fonts/OFL-Amiri.txt assets/fonts/OFL-IBMPlexSansArabic.txt audio/default_bus_layout.tres tools/generate_audio.py assets/audio/LICENSE.txt shaders/vegetation_wind.gdshader scripts/visuals/deer_rig.gd scripts/visuals/hunter_rig.gd scripts/visuals/rig_utils.gd scripts/visuals/camera_rig.gd scripts/visuals/forest.gd scripts/visuals/wilds_ground.gd scripts/visuals/wilds_environment.gd scripts/ui/deer_marker.gd scripts/tools/capture_shots.gd icon.svg icon.svg.import .gitignore README.md TESTING.md assets; do
 	if [ -e "$ROOT/$required" ]; then
 		pass "$required present"
 	else
@@ -569,7 +569,7 @@ fi
 
 # Every key the interface asks for must exist in the CSV.
 MISSING_KEYS=0
-for key in $(grep -rhoE '"(app|menu|pause|settings|hud|status|toast|confirm)\.[a-z0-9_.]+"' "$ROOT/scripts" | tr -d '"' | grep -v '\.$' | sort -u); do
+for key in $(grep -rhoE '"(app|menu|pause|settings|hud|status|toast|confirm|regions|region)\.[a-z0-9_.]+"' "$ROOT/scripts" | tr -d '"' | grep -v '\.$' | sort -u); do
 	if ! grep -aq "^${key}," "$CSV_FILE"; then
 		fail "the interface asks for the missing key ${key}"
 		MISSING_KEYS=$((MISSING_KEYS + 1))
@@ -585,6 +585,62 @@ for font in Amiri-Bold.ttf IBMPlexSansArabic-Regular.ttf IBMPlexSansArabic-SemiB
 		pass "font asset present: $font"
 	else
 		fail "font asset missing: $font"
+	fi
+done
+
+# ------------------------------------------------------- M. World regions ---
+section "M. World regions"
+REGION_LOG="$LOG_DIR/region-tests.log"
+godot_run --headless --path "$ROOT" res://scenes/tests/region_tests.tscn >"$REGION_LOG" 2>&1
+REGION_STATUS=$?
+project_errors "$REGION_LOG" >"$LOG_DIR/region.errors"
+if [ "$REGION_STATUS" -eq 0 ]; then
+	pass "world region tests exited 0"
+elif [ "$REGION_STATUS" -eq 124 ]; then
+	fail "world region tests timed out after ${GODOT_TIMEOUT}s (the suite never exited)"
+	grep -a '^  ' "$REGION_LOG" | sed 's/^/          /' | tail -n 8
+else
+	fail "world region tests exited $REGION_STATUS"
+fi
+if [ -s "$LOG_DIR/region.errors" ]; then
+	fail "world region tests reported project errors"
+	show "$LOG_DIR/region.errors"
+else
+	info "no project errors during world region tests"
+fi
+REGION_RESULT="$(grep -a '^RESULT:' "$REGION_LOG" | tail -n 1)"
+if [ -n "$REGION_RESULT" ]; then
+	info "$REGION_RESULT"
+else
+	fail "world region tests did not print a result summary"
+	show "$REGION_LOG" 30
+fi
+REGION_CHECKS="$(printf '%s' "$REGION_RESULT" | sed -n 's/^RESULT: \([0-9][0-9]*\) checks,.*/\1/p')"
+if [ -n "$REGION_CHECKS" ] && [ "$REGION_CHECKS" -ge 300 ]; then
+	pass "all $REGION_CHECKS region checks reported"
+else
+	fail "region suite is incomplete (${REGION_CHECKS:-0} checks reported, expected at least 300)"
+fi
+if printf '%s' "$REGION_RESULT" | grep -aqE '^RESULT: [0-9]+ checks, 0 failed$'; then
+	pass "every region check passed"
+else
+	fail "region checks failed: ${REGION_RESULT:-no summary}"
+	grep -a '^  FAIL' "$REGION_LOG" | sed 's/^/          /' | head -n 12
+fi
+
+# The ten regions are pure data, so the repository itself can be checked: the
+# table must define exactly ten entries and every one needs a landmark and exits.
+REGION_COUNT="$(grep -c '^static func _[a-z_]*() -> Dictionary:' "$ROOT/scripts/world/region_definition.gd")"
+if [ "$REGION_COUNT" -eq 10 ]; then
+	pass "the region table defines ten regions"
+else
+	fail "the region table defines $REGION_COUNT regions, expected 10"
+fi
+for f in scripts/world/region_definition.gd scripts/world/region_builder.gd scripts/world/region_manager.gd scripts/ui/region_menu.gd scripts/tests/region_tests.gd; do
+	if [ -s "$ROOT/$f" ]; then
+		pass "region source present: $f"
+	else
+		fail "region source missing: $f"
 	fi
 done
 
