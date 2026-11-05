@@ -39,8 +39,8 @@ const WIND_SHADER := preload("res://shaders/vegetation_wind.gdshader")
 const TUFT_WIND_STRENGTH := 0.075
 const TUFT_WIND_SPEED := 1.5
 
-const TUFT_BASE := Color(0.088, 0.132, 0.068)
-const TUFT_TIP := Color(0.158, 0.216, 0.108)
+const TUFT_BASE := Color(0.310, 0.376, 0.243)
+const TUFT_TIP := Color(0.482, 0.522, 0.322)
 
 
 ## Merges a region palette over the silver-forest defaults, so a caller that

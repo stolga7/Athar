@@ -484,6 +484,33 @@ What this cannot prove: the suite measures nodes, colours and numbers without a
 renderer, so it cannot show that the ten regions *look* distinct or pleasant.
 That needs a screen; see section 7.
 
+### N. Phase 4 models and combat
+Runs `scenes/tests/combat_tests.tscn` headlessly:
+
+```bash
+godot --headless --path . res://scenes/tests/combat_tests.tscn
+```
+
+Same contract as G–M: exit code 0, no project errors, a `RESULT:` summary with at
+least 100 checks, and `0 failed`. Section N also inspects the repository: both
+imported models must be real GLB files (the `glTF` magic and more than 100 KiB of
+geometry, so a placeholder cannot pass), both must appear in the asset manifest,
+and the manifest and credits must name CC0.
+
+| Area | What is asserted |
+|---|---|
+| Manifest | the file exists, parses as JSON, lists both assets, and every entry has a file that exists, an `https://` source, a creator, a recognised license, modification and redistribution permissions, and an attribution line |
+| Loading | a missing model returns `ok = false` with a reason instead of crashing; a real scene without a skeleton is refused; the hunter loads 62 bones and 24 clips, the deer 38 bones and 14 clips, and both are normalised to their target height |
+| Rigs | the hunter rig builds an `AnimationTree`, catalogs its clips, picks idle/walk/run from speed, scales playback with speed, plays a one-shot attack that ends by itself, returns to idle, holds a guard clip, dies, refuses actions while dead and revives; the deer plays eating, walk, gallop and head-low rest for its states and animates every state without error |
+| Combat rules | light and heavy attacks cost stamina, a second attack mid-swing is refused, each swing opens exactly one hit window, phases run windup → active → recovery, stamina gates attacks and dodges, stamina regenerates after a delay, a dodge has an invulnerability window, a blocked hit keeps 20% damage and spends stamina, holding block drains it, unblocked hits stagger, enough damage kills, and `heal_full` restores the hunter |
+| Camera | the camera builds and becomes current, zoom changes and clamps to 3.2–9 m, dragging orbits the camera, yaw and pitch offsets clamp, sensitivity is settable with a floor, lock-on takes a target, stays locked while it lives, pulls the camera in, and releases |
+| Mobile controls | six combat controls exist, the camera drag area exists, tapping a control emits its action, the cluster hides and shows, every button stays on screen with safe-area insets, no two overlap, the layout fits 1280×720, 960×540, 720×1280 and 1600×900, and the buttons grey out or highlight from combat state |
+| Live scene | the scene owns combat and a training target, an attack inside reach damages the target and an attack out of reach misses, the target can be knocked down and resets, attacking spends stamina, the deer can still be captured and keeps animating, lock-on takes and releases the nearest target, and the regions, living world and audio are still attached |
+
+What this cannot prove: no model is rendered here, so the suite cannot say the
+hunter looks like a hunter or that the deer's coat reads on a phone. Those are
+judged from the Phase 4 screenshots in section 7, and from play.
+
 ## 4. Reading the result
 
 Each check prints `PASS` or `FAIL`, failures print the exact diagnostic lines
@@ -491,16 +518,16 @@ that caused them, and the run ends with a summary:
 
 ```
 == Summary ==
-  177 checks, 0 failed
+  208 checks, 0 failed
   ALL CHECKS PASSED
 ```
 
-Checks G, H, I, J, K, L and M are one line each here; the 66 hunting, 53
-camera/visual, 100 wildlife, 95 living world, 86 audio, 217 interface and 398
-region checks they gate are listed in full in `hunting-tests.log`,
+Checks G–N are one line each here; the 78 hunting, 53 camera/visual, 100
+wildlife, 95 living world, 86 audio, 217 interface, 398 region and 138 combat and
+model checks they gate are listed in full in `hunting-tests.log`,
 `visual-tests.log`, `wildlife-tests.log`, `world-tests.log`, `audio-tests.log`,
-`ui-tests.log` and `region-tests.log`, and summarised as
-`RESULT: <n> checks, 0 failed` — 1,015 checks in total.
+`ui-tests.log`, `region-tests.log` and `combat-tests.log`, and summarised as
+`RESULT: <n> checks, 0 failed` — 1,165 checks in total.
 
 A failing run keeps its logs (also on success with `--verbose`) and prints the
 directory, e.g.:
@@ -684,6 +711,48 @@ project's own mobile/Forward+ renderer path on a CPU rasteriser. This is a
 developer convenience, not a supported configuration, and it is **not** part of
 `scripts/verify_project.sh` or CI: those run headless and must stay green on a
 machine with no display at all.
+
+### Phase 4 model, combat and mobile screenshots
+
+`scenes/tools/phase4_shots.tscn` renders the same real scene from staged angles:
+
+```bash
+godot --path . --rendering-driver opengl3 --rendering-method gl_compatibility \
+      --display-driver x11 --resolution 1280x720 \
+      res://scenes/tools/phase4_shots.tscn
+```
+
+It writes `artifacts/*.png` and prints `SHOT <name>` for each frame, then a
+`CAPTURE_DONE` line listing all of them. The committed copies are in
+`docs/screenshots/phase-4/`.
+
+| Shot | What it is for |
+|---|---|
+| `01_hunter_front` | the imported hunter from the front: silhouette, face, gear, bow |
+| `02_hunter_side` | the same model from the side, to judge proportions |
+| `03_hunter_run` | the run clip mid-stride, to check the pose rather than the mesh |
+| `04_hunter_attack` | the light attack clip during its swing |
+| `05_hunter_block` | the raised guard with the HUD block control held |
+| `06_deer_grazing` | the imported stag grazing, antlers and coat visible |
+| `07_deer_alert` | the stag with its head up, the alert state |
+| `08_deer_gallop` | the gallop clip, which is also the flee animation |
+| `09_combat_target` | a swing at the training target from a player's side view, with stamina and HUD state |
+| `10_mobile_controls` | the full touch layout: stick, six combat buttons, context button, toast |
+| `11_forest_gameplay` | the default gameplay framing, to judge the forest after the colour work |
+
+`scenes/tools/model_preview.tscn` renders a single model on a neutral backdrop,
+which is useful when checking a new import before wiring it into a rig:
+
+```bash
+godot --path . --rendering-driver opengl3 --rendering-method gl_compatibility \
+      --display-driver x11 res://scenes/tools/model_preview.tscn
+```
+
+Unlike the Phase 3 tools, these renders use Godot's `gl_compatibility` backend on
+Mesa's `llvmpipe` software OpenGL, because that is the path this VM can drive
+(Xvfb plus software OpenGL, no Vulkan device). The images are therefore what the
+**mobile renderer** draws, not the Forward+ path: colours and silhouettes carry
+over, but shadow quality and post-processing do not.
 
 ### Living world screenshots
 

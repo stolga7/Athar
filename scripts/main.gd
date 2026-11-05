@@ -13,6 +13,8 @@ const HunterRig := preload("res://scripts/visuals/hunter_rig.gd")
 const DeerRig := preload("res://scripts/visuals/deer_rig.gd")
 const DeerAI := preload("res://scripts/animals/deer_ai.gd")
 const HuntSession := preload("res://scripts/gameplay/hunt_session.gd")
+const CombatController := preload("res://scripts/gameplay/combat_controller.gd")
+const TrainingDummy := preload("res://scripts/gameplay/training_dummy.gd")
 const CameraRig := preload("res://scripts/visuals/camera_rig.gd")
 const Forest := preload("res://scripts/visuals/forest.gd")
 const WildsGround := preload("res://scripts/visuals/wilds_ground.gd")
@@ -68,6 +70,13 @@ var audio_panel: Control
 var hud_root: Control
 ## Planar speed of each actor, used for footstep timing.
 var deer_speed := 0.0
+## Melee combat rules (attacks, dodge, block, stamina) and the training target.
+var combat: RefCounted
+var dummy: Node3D
+var dummy_timer := 0.0
+var hunter_dead := false
+var _death_timer := 0.0
+var _aim_button: Button
 ## Summary dictionaries from the visual builders, used by the visual tests.
 var forest_info := {}
 var ground_info := {}
@@ -133,6 +142,7 @@ func _ready() -> void:
 	_build_world()
 	_build_hunter()
 	_build_deer()
+	_build_combat()
 	_build_camera()
 	_build_living_world()
 	_build_hud()
@@ -158,6 +168,30 @@ func _ready() -> void:
 func _setup_input() -> void:
 	for action in ["move_forward", "move_back", "move_left", "move_right"]:
 		if not InputMap.has_action(action): InputMap.add_action(action)
+	# Combat and camera bindings for keyboard and mouse. Touch uses the HUD
+	# buttons and the camera drag area, but every action also has a key so the
+	# game is playable on desktop without a touchscreen.
+	_add_key_action("light_attack", KEY_J)
+	_add_key_action("heavy_attack", KEY_K)
+	_add_key_action("dodge", KEY_SPACE)
+	_add_key_action("block", KEY_L)
+	_add_key_action("aim", KEY_Q)
+	_add_key_action("lock_on", KEY_TAB)
+	_add_key_action("zoom_in", KEY_EQUAL)
+	_add_key_action("zoom_out", KEY_MINUS)
+	if not InputMap.has_action("light_attack"):
+		return
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	InputMap.action_add_event("light_attack", click)
+
+
+func _add_key_action(action: String, keycode: Key) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	var event := InputEventKey.new()
+	event.physical_keycode = keycode
+	InputMap.action_add_event(action, event)
 
 func _build_environment() -> void:
 	environment_info = WildsEnvironment.build(self)
@@ -229,6 +263,141 @@ func _build_deer() -> void:
 func _active_seed() -> int:
 	return int(_seed_value) if test_seed_active else -1
 
+## The combat controller and the training target. The target proves the swing,
+## block and dodge rules without adding an enemy: nothing here chases or
+## attacks the hunter, and the deer is unchanged.
+func _build_combat() -> void:
+	combat = CombatController.new()
+	dummy = TrainingDummy.new()
+	dummy.name = "TrainingTarget"
+	dummy.position = Vector3(0, 0.1, 1.5)
+	add_child(dummy)
+	combat.attack_window.connect(_on_attack_window)
+	combat.state_changed.connect(_on_combat_state_changed)
+
+
+## A swing opened its active window: if the target is inside the weapon's reach
+## and roughly in front of the hunter, the hit lands.
+func _on_attack_window(_kind: String) -> void:
+	if dummy == null or combat == null:
+		return
+	var to_target: Vector3 = dummy.global_position - hunter.global_position
+	to_target.y = 0.0
+	var reach: float = combat.current_reach()
+	if to_target.length() > reach or to_target.length() < 0.05:
+		return
+	var facing := Vector3(-sin(hunter.rotation.y), 0, -cos(hunter.rotation.y))
+	if facing.dot(to_target.normalized()) < 0.35:
+		return
+	var remaining: float = dummy.damage(combat.current_damage())
+	if audio != null:
+		audio.play_ui_tap()
+	if hud != null:
+		hud.toast("toast.target_hit", int(remaining))
+	if remaining <= 0.0:
+		dummy_timer = 4.0
+		if hud != null:
+			hud.toast("toast.target_down")
+
+
+func _on_combat_state_changed(_previous: String, current: String) -> void:
+	if hunter_rig == null or not hunter_rig.is_ready():
+		return
+	match current:
+		CombatController.LIGHT_STATE:
+			hunter_rig.play_action("light")
+		CombatController.HEAVY_STATE:
+			hunter_rig.play_action("heavy")
+		CombatController.DODGE_STATE:
+			hunter_rig.play_action("roll")
+		CombatController.HIT_STATE:
+			hunter_rig.play_action("hit")
+		CombatController.DEAD_STATE:
+			hunter_rig.play_death()
+			hunter_dead = true
+			_death_timer = 3.0
+
+
+## Combat actions requested by touch or by key. Every request is answered: an
+## unaffordable or illegal action is refused by the controller and the HUD tells
+## the player why instead of silently ignoring the tap.
+func request_combat(action: String, pressed := true) -> bool:
+	if combat == null:
+		return false
+	match action:
+		"light":
+			return combat.request_light()
+		"heavy":
+			return combat.request_heavy()
+		"dodge":
+			return combat.request_dodge()
+		"block":
+			combat.set_blocking(pressed)
+			if hunter_rig != null and hunter_rig.is_ready():
+				hunter_rig.set_blocking(pressed)
+			return true
+		"aim":
+			combat.set_aiming(not combat.aiming)
+			if hunter_rig != null and hunter_rig.is_ready():
+				hunter_rig.set_aiming(combat.aiming)
+			return true
+		"lock":
+			return toggle_lock_on()
+	return false
+
+
+## Lock-on picks the closest of the two things the player can fight: the deer and
+## the training target. Pressing it again releases the camera.
+func toggle_lock_on() -> bool:
+	if camera_rig == null:
+		return false
+	if camera_rig.has_lock():
+		camera_rig.clear_lock()
+		if hud != null:
+			hud.toast("toast.lock_off")
+		return true
+	var best: Node3D = null
+	var best_distance := 14.0
+	for candidate in [dummy, deer]:
+		if candidate == null or not candidate.visible:
+			continue
+		var d := hunter.global_position.distance_to(candidate.global_position)
+		if d < best_distance:
+			best = candidate
+			best_distance = d
+	if best == null:
+		if hud != null:
+			hud.toast("toast.lock_none")
+		return false
+	camera_rig.lock_on(best)
+	if hud != null:
+		hud.toast("toast.lock_on")
+	return true
+
+
+func _on_combat_pressed(action: String, pressed: bool) -> void:
+	if audio != null:
+		audio.play_ui_tap()
+	if not request_combat(action, pressed) and action in ["light", "heavy", "dodge"]:
+		if hud != null:
+			hud.toast("toast.no_stamina")
+
+
+func _on_look_dragged(delta_pixels: Vector2) -> void:
+	if camera_rig != null:
+		camera_rig.add_look(delta_pixels)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMagnifyGesture and camera_rig != null:
+		camera_rig.zoom_by(1.0 - event.factor)
+	elif event is InputEventMouseButton and event.pressed and camera_rig != null:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			camera_rig.zoom_by(-0.06)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			camera_rig.zoom_by(0.06)
+
+
 func _build_camera() -> void:
 	# Presentation only: the rig smooths its own motion and pulls in when a tree
 	# or the ground gets between it and the hunter.
@@ -286,6 +455,9 @@ func _build_hud() -> void:
 	hud.interact_pressed.connect(_on_interact_pressed)
 	hud.pause_pressed.connect(open_pause)
 	hud.move_changed.connect(_on_stick_moved)
+	hud.combat_action.connect(_on_combat_pressed)
+	hud.look_dragged.connect(_on_look_dragged)
+	hud.set_combat_visible(false)
 	hud_root = hud
 	status_label = hud.status_label
 	info_label = hud.info_label
@@ -360,30 +532,60 @@ func _sync_audio_environment() -> void:
 # ---------------------------------------------------------------- gameplay ---
 func _physics_process(delta: float) -> void:
 	if hunter == null or deer == null: return
+	if combat != null:
+		combat.update(delta)
+		_read_combat_keys()
+		_update_death(delta)
 	var dir := Vector3.ZERO
-	if Input.is_action_pressed("move_forward"): dir.z -= 1
-	if Input.is_action_pressed("move_back"): dir.z += 1
-	if Input.is_action_pressed("move_left"): dir.x -= 1
-	if Input.is_action_pressed("move_right"): dir.x += 1
-	# Touch pad: screen up is -y and forward is -z, so the axes map straight
-	# across. Keys and the stick add together without breaking the old path.
-	dir.x += joystick_vector.x
-	dir.z += joystick_vector.y
+	if not hunter_dead:
+		if Input.is_action_pressed("move_forward"): dir.z -= 1
+		if Input.is_action_pressed("move_back"): dir.z += 1
+		if Input.is_action_pressed("move_left"): dir.x -= 1
+		if Input.is_action_pressed("move_right"): dir.x += 1
+		# Touch pad: screen up is -y and forward is -z, so the axes map straight
+		# across. Keys and the stick add together without breaking the old path.
+		dir.x += joystick_vector.x
+		dir.z += joystick_vector.y
 	if dir.length() > 0.001:
 		dir = dir.normalized()
-		hunter.velocity.x = dir.x * HUNTER_SPEED
-		hunter.velocity.z = dir.z * HUNTER_SPEED
+		# Camera-relative movement: pushing the stick forward always walks the
+		# way the camera looks, which is what makes the orbit useful. With the
+		# camera at its neutral yaw this is exactly the Phase 3 behaviour.
+		if camera_rig != null:
+			dir = dir.rotated(Vector3.UP, camera_rig.yaw)
+		var speed := HUNTER_SPEED * _speed_factor()
+		hunter.velocity.x = dir.x * speed
+		hunter.velocity.z = dir.z * speed
 		hunter.rotation.y = lerp_angle(hunter.rotation.y, atan2(-dir.x, -dir.z), delta * HUNTER_TURN_RATE)
-		stamina = maxf(0, stamina - delta * 2.5)
 	else:
 		hunter.velocity.x = move_toward(hunter.velocity.x, 0, HUNTER_BRAKE * delta)
 		hunter.velocity.z = move_toward(hunter.velocity.z, 0, HUNTER_BRAKE * delta)
-		stamina = minf(100, stamina + delta * 5.0)
+	# Breathing stamina lives in the combat controller now: one pool pays for
+	# walking, attacking, dodging and blocking, so the bar never lies about what
+	# the player can afford. `stamina` is only a mirror for older systems.
+	if combat != null:
+		stamina = combat.stamina
+	# A dodge is a short burst along the facing direction; it is the only state
+	# that moves the hunter faster than a run.
+	if combat != null and combat.state == CombatController.DODGE_STATE and combat.elapsed < 0.30:
+		var forward := Vector3(-sin(hunter.rotation.y), 0, -cos(hunter.rotation.y))
+		hunter.velocity.x = forward.x * 7.2
+		hunter.velocity.z = forward.z * 7.2
 	hunter.velocity.y -= GRAVITY * delta
 	hunter.move_and_slide()
 	hunter.global_position.x = clampf(hunter.global_position.x, -HUNTER_LIMIT, HUNTER_LIMIT)
 	hunter.global_position.z = clampf(hunter.global_position.z, -HUNTER_LIMIT, HUNTER_LIMIT)
-	hunter_rig.animate(delta, Vector2(hunter.velocity.x, hunter.velocity.z).length())
+	if hunter_rig != null and hunter_rig.is_ready():
+		if combat != null:
+			hunter_rig.set_blocking(combat.blocking)
+			hunter_rig.set_aiming(combat.aiming)
+		hunter_rig.animate(delta, Vector2(hunter.velocity.x, hunter.velocity.z).length())
+	if combat != null and combat.hit_pending:
+		combat.hit_pending = false
+	if dummy_timer > 0.0:
+		dummy_timer -= delta
+		if dummy_timer <= 0.0 and dummy != null:
+			dummy.reset()
 	if living_world != null:
 		living_world.update(delta, hunter.global_position)
 		if living_world.consume_change():
@@ -392,7 +594,14 @@ func _physics_process(delta: float) -> void:
 	_check_capture()
 	if audio != null:
 		audio.update(delta, hunter.global_position, Vector2(hunter.velocity.x, hunter.velocity.z).length(), deer.global_position, deer_speed)
-	camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
+	if camera_rig != null:
+		# The look offset recentres while the hunter walks, so the camera ends up
+		# behind him again instead of staying swung around forever.
+		if Vector2(hunter.velocity.x, hunter.velocity.z).length() > 0.6:
+			camera_rig.yaw_offset = lerpf(camera_rig.yaw_offset, 0.0, minf(1.0, delta * 1.4))
+		camera_rig.update_camera(delta, hunter.global_position, hunter.rotation.y)
+	if hud != null:
+		hud.set_combat_state(combat.stamina if combat != null else 100.0, combat.blocking if combat != null else false, combat.aiming if combat != null else false, camera_rig != null and camera_rig.has_lock())
 	if deer_marker != null:
 		deer_marker.update_marker(camera, deer.global_position, deer.visible and not hunt_session.is_captured)
 	_update_hud()
@@ -640,6 +849,71 @@ func _on_stick_moved(value: Vector2) -> void:
 	joystick_vector = value
 
 
+## Keyboard equivalents for the touch combat controls, polled once per physics
+## step so holding block works and one-shot attacks do not repeat.
+func _read_combat_keys() -> void:
+	if Input.is_action_just_pressed("light_attack"):
+		request_combat("light")
+	if Input.is_action_just_pressed("heavy_attack"):
+		request_combat("heavy")
+	if Input.is_action_just_pressed("dodge"):
+		request_combat("dodge")
+	if Input.is_action_just_pressed("aim"):
+		request_combat("aim")
+	if Input.is_action_just_pressed("lock_on"):
+		request_combat("lock")
+	var held := Input.is_action_pressed("block")
+	if held != combat.blocking:
+		request_combat("block", held)
+	if Input.is_action_just_pressed("zoom_in"):
+		camera_rig.zoom_by(-0.08)
+	if Input.is_action_just_pressed("zoom_out"):
+		camera_rig.zoom_by(0.08)
+
+
+## Movement speed multiplier for the current combat state: attacking roots the
+## hunter briefly, blocking lets him shuffle, aiming slows him down.
+func _speed_factor() -> float:
+	if combat == null:
+		return 1.0
+	match combat.state:
+		CombatController.LIGHT_STATE, CombatController.HEAVY_STATE:
+			return 0.25
+		CombatController.DODGE_STATE:
+			return 0.0
+		CombatController.HIT_STATE:
+			return 0.15
+		CombatController.DEAD_STATE:
+			return 0.0
+	if combat.blocking:
+		return 0.55
+	if combat.aiming:
+		return 0.7
+	return 1.0
+
+
+## Death is a defeat state with a respawn, not a game over screen: the hunt is
+## the identity of ATHAR, and the training target is the only thing that can do
+## damage right now.
+func _update_death(delta: float) -> void:
+	if combat == null or not combat.is_dead():
+		return
+	hunter_dead = true
+	_death_timer -= delta
+	if _death_timer > 0.0:
+		return
+	hunter_dead = false
+	combat.heal_full()
+	if hunter_rig != null and hunter_rig.is_ready():
+		hunter_rig.revive()
+	hunter.global_position = Vector3(0, 0.1, 7)
+	hunter.velocity = Vector3.ZERO
+	if camera_rig != null:
+		camera_rig.snap_to(hunter.global_position, hunter.rotation.y)
+	if hud != null:
+		hud.toast("toast.revived")
+
+
 ## The context button takes the deer when it is within reach, and opens the
 ## region screen when the player is standing at a gate.
 func _on_interact_pressed() -> void:
@@ -814,23 +1088,35 @@ func open_main_menu() -> void:
 	if main_menu == null:
 		return
 	pause_menu.close()
+	# Closing the settings screen re-opens whichever screen opened it. The title
+	# screen closes it too, so the handler is muted for that one call; otherwise
+	# the pause menu appears behind the title screen.
+	_suppress_settings_closed = true
 	settings_menu.close()
+	_suppress_settings_closed = false
 	confirm_prompt.dismiss()
+	pause_menu.close()
 	main_menu.open()
 	game_state = STATE_MENU
 	set_physics_process(false)
 	if hud != null:
 		hud.release_controls()
+		hud.set_combat_visible(false)
 
 
 func start_game() -> void:
 	if audio != null:
 		audio.play_ui_tap()
 	main_menu.close()
+	_suppress_settings_closed = true
 	settings_menu.close()
+	_suppress_settings_closed = false
 	confirm_prompt.dismiss()
+	pause_menu.close()
 	game_state = STATE_PLAYING
 	set_physics_process(true)
+	if hud != null:
+		hud.set_combat_visible(true)
 	if _hunt_abandoned:
 		_hunt_abandoned = false
 		_reset_hunt_state()
@@ -843,6 +1129,7 @@ func open_pause() -> void:
 	set_physics_process(false)
 	if hud != null:
 		hud.release_controls()
+		hud.set_combat_visible(false)
 	if audio != null:
 		audio.play_ui_tap()
 	pause_menu.open()
@@ -858,6 +1145,8 @@ func resume_game() -> void:
 	confirm_prompt.dismiss()
 	game_state = STATE_PLAYING
 	set_physics_process(true)
+	if hud != null:
+		hud.set_combat_visible(true)
 
 
 func open_settings(from_main: bool) -> void:
@@ -915,6 +1204,8 @@ func _reset_hunt_state() -> void:
 	if hunt_session.is_captured:
 		_start_new_hunt()
 		stamina = 100.0
+		if combat != null:
+			combat.heal_full()
 		return
 	deer.global_position = _pick_deer_spot()
 	deer.velocity = Vector3.ZERO
@@ -924,6 +1215,8 @@ func _reset_hunt_state() -> void:
 	deer_ai.reset()
 	deer_rig.set_state(DeerAI.GRAZING)
 	stamina = 100.0
+	if combat != null:
+		combat.heal_full()
 	if hud != null:
 		hud.set_action_key("hud.action.hunt")
 		hud.set_interact_key("")

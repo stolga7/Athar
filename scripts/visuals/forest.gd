@@ -61,13 +61,18 @@ const BARK_COLORS: Array[Color] = [
 	Color(0.209, 0.162, 0.115),
 	Color(0.142, 0.119, 0.095),
 ]
+## Crown colours. The prototypes' greens were so dark that a tree read as a black
+## blob against the sky, which is the single biggest reason the forest looked
+## unfinished. These sit in the 0.15-0.45 range so a lit crown still shows its
+## own shading, and the three tones per palette give each tree a light and a
+## shadow side instead of one flat colour.
 const LEAF_PALETTES: Array = [
-	[Color(0.061, 0.135, 0.084), Color(0.081, 0.169, 0.097), Color(0.105, 0.203, 0.115)],
-	[Color(0.095, 0.176, 0.095), Color(0.121, 0.213, 0.111), Color(0.146, 0.243, 0.124)],
-	[Color(0.047, 0.124, 0.095), Color(0.068, 0.155, 0.119), Color(0.092, 0.186, 0.132)],
-	[Color(0.078, 0.132, 0.076), Color(0.101, 0.162, 0.089), Color(0.124, 0.189, 0.105)],
-	[Color(0.051, 0.111, 0.076), Color(0.070, 0.135, 0.089), Color(0.092, 0.162, 0.105)],
-	[Color(0.111, 0.196, 0.121), Color(0.135, 0.223, 0.135), Color(0.162, 0.250, 0.146)],
+	[Color(0.152, 0.286, 0.168), Color(0.196, 0.353, 0.200), Color(0.243, 0.420, 0.243)],
+	[Color(0.196, 0.337, 0.168), Color(0.243, 0.404, 0.208), Color(0.290, 0.463, 0.243)],
+	[Color(0.129, 0.286, 0.216), Color(0.161, 0.345, 0.259), Color(0.200, 0.404, 0.294)],
+	[Color(0.176, 0.310, 0.145), Color(0.216, 0.373, 0.176), Color(0.259, 0.435, 0.208)],
+	[Color(0.114, 0.259, 0.176), Color(0.145, 0.310, 0.204), Color(0.184, 0.365, 0.243)],
+	[Color(0.231, 0.400, 0.220), Color(0.278, 0.455, 0.243), Color(0.329, 0.502, 0.278)],
 ]
 
 

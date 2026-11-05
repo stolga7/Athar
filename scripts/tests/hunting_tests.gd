@@ -313,8 +313,9 @@ func _test_new_hunt_loop() -> void:
 
 
 # ------------------------------------------------------------ rig geometry ---
-## Measures the assembled models so their proportions are checked numerically,
-## not assumed. No renderer is involved: this is the mesh bounding box.
+## Measures the imported models through their skeletons. A skinned mesh reports
+## the bind-pose bounding box of its vertices, which is not the size of the
+## character in the world, so the bones are what gets measured.
 func _test_rig_geometry() -> void:
 	var HunterRig := preload("res://scripts/visuals/hunter_rig.gd")
 	var DeerRig := preload("res://scripts/visuals/deer_rig.gd")
@@ -327,18 +328,48 @@ func _test_rig_geometry() -> void:
 	stage.add_child(deer)
 	await get_tree().process_frame
 
-	var hunter_box := _bounds(hunter)
-	var deer_box := _bounds(deer)
-	_check(hunter_box.size.y > 1.7 and hunter_box.size.y < 2.3, "hunter is a human-scale figure", "%.2f m tall" % hunter_box.size.y)
-	_check(hunter_box.position.y > -0.12 and hunter_box.position.y < 0.15, "hunter's boots stand on the ground", "lowest point %.2f m" % hunter_box.position.y)
-	_check(hunter_box.size.x < 1.3 and hunter_box.size.z < 1.3, "hunter stays a compact silhouette", "%.2f x %.2f m" % [hunter_box.size.x, hunter_box.size.z])
-	_check(deer_box.size.y > 1.5 and deer_box.size.y < 2.3, "deer with antlers is deer-scale", "%.2f m tall" % deer_box.size.y)
-	_check(deer_box.size.z > 1.3, "deer reads as a long-bodied animal", "%.2f m long" % deer_box.size.z)
-	_check(deer_box.size.x < 1.0, "deer is narrow from the front", "%.2f m wide" % deer_box.size.x)
-	_check(deer_box.position.y > -0.12, "deer hooves stand on the ground", "lowest point %.2f m" % deer_box.position.y)
+	_check(hunter.is_ready(), "the hunter asset loads", hunter.missing_reason)
+	_check(deer.is_ready(), "the deer asset loads", deer.missing_reason)
+	_check(hunter.skeleton != null and hunter.skeleton.get_bone_count() >= 40,
+		"the hunter is a skinned humanoid", "%d bones" % (hunter.skeleton.get_bone_count() if hunter.skeleton else 0))
+	_check(deer.skeleton != null and deer.skeleton.get_bone_count() >= 20,
+		"the deer is a skinned animal", "%d bones" % (deer.skeleton.get_bone_count() if deer.skeleton else 0))
+	_check(hunter.model.scale.y > 0.4 and hunter.model.scale.y < 2.5,
+		"the hunter is scaled to human size", "scale %.2f" % hunter.model.scale.y)
+	_check(deer.model.scale.y > 0.2 and deer.model.scale.y < 2.5,
+		"the deer is scaled to animal size", "scale %.2f" % deer.model.scale.y)
+	_check(hunter.model.rotation.y != 0.0, "the hunter model is turned to face -Z")
+
+	var hunter_bone := _bone_height(hunter, "head")
+	_check(hunter_bone > 1.3 and hunter_bone < 2.1, "the hunter's head sits at human height", "%.2f m" % hunter_bone)
+
+	# The clips the game asks for must actually be in the imported file.
+	for clip in [HunterRig.CLIP_IDLE, HunterRig.CLIP_WALK, HunterRig.CLIP_RUN, HunterRig.CLIP_ROLL, HunterRig.CLIP_LIGHT, HunterRig.CLIP_HIT, HunterRig.CLIP_DEATH]:
+		_check(hunter._clips.has(clip), "hunter clip %s is in the asset" % clip, String(hunter._clips.get(clip, "")))
+	for clip in [DeerRig.CLIP_GRAZE, DeerRig.CLIP_WALK, DeerRig.CLIP_GALLOP, DeerRig.CLIP_DEATH]:
+		_check(deer._clips.has(clip), "deer clip %s is in the asset" % clip, String(deer._clips.get(clip, "")))
 
 	stage.queue_free()
 	await get_tree().process_frame
+
+
+func _bone_height(rig, fragment: String) -> float:
+	if rig.skeleton == null:
+		return 0.0
+	for i in range(rig.skeleton.get_bone_count()):
+		if rig.skeleton.get_bone_name(i).to_lower().find(fragment) >= 0:
+			return (rig.skeleton.global_transform * rig.skeleton.get_bone_global_pose(i)).origin.y
+	return 0.0
+
+
+func _bone_pose_signature(rig) -> float:
+	if rig.skeleton == null or rig.skeleton.get_bone_count() == 0:
+		return 0.0
+	var total := 0.0
+	for i in range(mini(rig.skeleton.get_bone_count(), 12)):
+		var q: Quaternion = rig.skeleton.get_bone_pose_rotation(i)
+		total += absf(q.x) + absf(q.y) + absf(q.z)
+	return total
 
 
 func _bounds(root: Node) -> AABB:
@@ -367,23 +398,24 @@ func _test_live_scene() -> void:
 	_check(_main.hunter_rig != null and _main.deer_rig != null, "scene builds hunter and deer rigs")
 	var hunter_parts := _count_meshes(_main.hunter_rig)
 	var deer_parts := _count_meshes(_main.deer_rig)
-	_check(hunter_parts >= 40, "hunter rig is a detailed multi-part model", "%d mesh parts" % hunter_parts)
-	_check(deer_parts >= 40, "deer rig is a detailed multi-part model", "%d mesh parts" % deer_parts)
+	_check(hunter_parts >= 4, "hunter rig renders a skinned model", "%d mesh parts" % hunter_parts)
+	_check(deer_parts >= 1, "deer rig renders a skinned model", "%d mesh parts" % deer_parts)
 
-	# Animation must actually rotate joints, not slide the body.
+	# Animation must actually move the skeleton, not slide the body.
 	var rig = _main.hunter_rig
-	var thighs: Array = rig.get("_thighs")
-	var before: float = thighs[0].rotation.x
+	var before := _bone_pose_signature(rig)
 	for i in range(30):
 		rig.animate(DT, MainScript.HUNTER_SPEED)
-	var after: float = thighs[0].rotation.x
-	_check(absf(after - before) > 0.05, "hunter walk cycle rotates the leg joints", "%.2f -> %.2f rad" % [before, after])
+		await get_tree().process_frame
+	var after := _bone_pose_signature(rig)
+	_check(absf(after - before) > 0.0001, "hunter run cycle poses the skeleton", "%.3f -> %.3f" % [before, after])
 	var deer_rig = _main.deer_rig
-	var neck_before: float = deer_rig.get("_neck").rotation.x
+	var deer_before := _bone_pose_signature(deer_rig)
 	for i in range(20):
-		deer_rig.animate(DT, 0.0)
-	var neck_after: float = deer_rig.get("_neck").rotation.x
-	_check(absf(neck_after - neck_before) > 0.01, "deer idle animation moves the neck", "%.2f -> %.2f rad" % [neck_before, neck_after])
+		deer_rig.animate(DT, 2.0)
+		await get_tree().process_frame
+	var deer_after := _bone_pose_signature(deer_rig)
+	_check(absf(deer_after - deer_before) > 0.0001, "deer gait poses the skeleton", "%.3f -> %.3f" % [deer_before, deer_after])
 
 	# Every state must be poseable without errors.
 	for state in [DeerAI.GRAZING, DeerAI.ALERTED, DeerAI.FLEEING, DeerAI.ESCAPING, DeerAI.CAPTURED]:

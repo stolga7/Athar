@@ -114,3 +114,17 @@ region.sky_cliffs.name,جروف السماء,Sky Cliffs
 region.sky_cliffs.desc,مصاطب صخرية عالية وجسر حبال. الريح تحمل رائحة الغزلان بعيدًا.,High rock terraces and a rope bridge. The wind carries the deer's scent away.
 region.void_realm.name,عالم الفراغ,Void Realm
 region.void_realm.desc,حجارة طافية وضوء بنفسجي. هنا تصمت البرية.,Floating stone and violet light. Here the wilderness goes quiet.
+hud.combat.light,ضربة,STRIKE
+hud.combat.heavy,ثقيلة,HEAVY
+hud.combat.dodge,تفادٍ,DODGE
+hud.combat.block,صدّ,BLOCK
+hud.combat.aim,تصويب,AIM
+hud.combat.lock,تثبيت,LOCK
+toast.target_hit,أصاب الهدف: %d,Target hit: %d
+toast.target_down,سقط الهدف,Target down
+toast.no_stamina,لا توجد طاقة كافية,Not enough stamina
+toast.lock_on,تم تثبيت الهدف,Target locked
+toast.lock_off,تم تحرير الكاميرا,Camera released
+toast.lock_none,لا يوجد هدف قريب,No target in range
+toast.revived,عاد الصياد إلى الحياة,Hunter revived
+hud.vital.health,الصحة,HEALTH

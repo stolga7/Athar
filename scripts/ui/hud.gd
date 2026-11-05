@@ -16,6 +16,11 @@ signal action_pressed
 signal interact_pressed
 signal pause_pressed
 signal move_changed(value: Vector2)
+## A combat control was tapped. `action` is one of "light", "heavy", "dodge",
+## "aim", "lock" or "block" (block carries its pressed state).
+signal combat_action(action: String, pressed: bool)
+## The player dragged a finger (or the mouse) on the camera area, in pixels.
+signal look_dragged(delta: Vector2)
 
 const UiKit := preload("res://scripts/ui/ui_kit.gd")
 const Localization := preload("res://scripts/ui/localization.gd")
@@ -32,6 +37,11 @@ const ACTION_MIN := 92.0
 const ACTION_MAX := 132.0
 const INTERACT_HEIGHT := 58.0
 const TOAST_SECONDS := 2.4
+## Combat button sizing. The cluster sits in an arc left of the context button so
+## a thumb can reach attack, dodge and block without moving off the right edge.
+const COMBAT_MIN := 62.0
+const COMBAT_MAX := 88.0
+const COMBAT_GAP := 10.0
 
 var joystick: Control
 var action_button: Button
@@ -48,6 +58,11 @@ var alert_bar: Control
 var toast_label: Label
 var hint_label: Label
 var marker: Control
+## Full-screen-right drag surface for the camera, and the combat cluster.
+var look_area: Control
+var combat_root: Control
+var combat_buttons := {}
+var block_button: Button
 
 ## Screen edges taken by a notch or a rounded corner, in HUD pixels.
 var safe_insets := Rect2()
@@ -188,6 +203,45 @@ func _build() -> void:
 	interact_button.visible = false
 	interact_button.pressed.connect(func() -> void: interact_pressed.emit())
 	add_child(interact_button)
+
+	# Camera drag surface: the right and upper two thirds of the screen. It sits
+	# under the buttons (added before them) so a button press never orbits the
+	# camera at the same time.
+	look_area = Control.new()
+	look_area.name = "LookArea"
+	look_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	look_area.focus_mode = Control.FOCUS_NONE
+	look_area.gui_input.connect(_on_look_input)
+	add_child(look_area)
+
+	# The combat buttons are direct children of the HUD rather than of a wrapper
+	# Control: a zero-sized wrapper is mirrored by the right-to-left layout, which
+	# pushed the whole cluster off the right edge of the screen.
+	combat_root = self
+	for entry in [
+		{"action": "light", "key": "hud.combat.light"},
+		{"action": "heavy", "key": "hud.combat.heavy"},
+		{"action": "dodge", "key": "hud.combat.dodge"},
+		{"action": "block", "key": "hud.combat.block"},
+		{"action": "aim", "key": "hud.combat.aim"},
+		{"action": "lock", "key": "hud.combat.lock"},
+	]:
+		var button := UiKit.button(String(entry["key"]))
+		button.name = "Combat_%s" % entry["action"]
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 15)
+		button.add_theme_stylebox_override("normal", UiKit.button_style(Color(0.10, 0.10, 0.13, 0.86), Color(0.52, 0.46, 0.32), COMBAT_MIN * 0.5))
+		button.add_theme_stylebox_override("pressed", UiKit.button_style(Color(0.34, 0.25, 0.14, 1.0), UiKit.GOLD, COMBAT_MIN * 0.5))
+		button.add_theme_stylebox_override("disabled", UiKit.button_style(Color(0.10, 0.10, 0.12, 0.45), Color(0.32, 0.30, 0.26), COMBAT_MIN * 0.5))
+		var action := String(entry["action"])
+		if action == "block":
+			button.toggle_mode = true
+			button.toggled.connect(func(on: bool) -> void: combat_action.emit("block", on))
+			block_button = button
+		else:
+			button.pressed.connect(func() -> void: combat_action.emit(action, true))
+		add_child(button)
+		combat_buttons[action] = button
 
 	toast_label = UiKit.label("toast.saved", "Subhead", HORIZONTAL_ALIGNMENT_CENTER)
 	toast_label.name = "Toast"
@@ -331,6 +385,49 @@ func toast_visible() -> bool:
 	return toast_label != null and toast_label.visible
 
 
+## Shows or hides the combat cluster. Combat is hidden on the title screen and
+## while a menu is open, so no button is ever on screen but inert.
+func set_combat_visible(value: bool) -> void:
+	for button in combat_buttons.values():
+		(button as Button).visible = value
+	if look_area != null:
+		look_area.visible = value
+
+
+## Greys out what the hunter cannot afford right now, so stamina is legible
+## without reading the bar.
+func set_combat_state(stamina: float, blocking: bool, aiming: bool, has_lock: bool) -> void:
+	if combat_buttons.is_empty():
+		return
+	_set_disabled("light", stamina < 11.0)
+	_set_disabled("heavy", stamina < 24.0)
+	_set_disabled("dodge", stamina < 17.0)
+	if block_button != null and block_button.button_pressed != blocking:
+		block_button.set_pressed_no_signal(blocking)
+	var aim_button: Button = combat_buttons.get("aim")
+	if aim_button != null:
+		aim_button.set_pressed_no_signal(aiming)
+	var lock_button: Button = combat_buttons.get("lock")
+	if lock_button != null:
+		lock_button.modulate = Color(1, 1, 1) if has_lock else Color(0.82, 0.82, 0.86)
+
+
+func _set_disabled(action: String, disabled: bool) -> void:
+	var button: Button = combat_buttons.get(action)
+	if button != null and button.disabled != disabled:
+		button.disabled = disabled
+
+
+## Converts a drag on the camera area into a look delta. Kept here so the same
+## gesture works for touch and for a mouse drag on desktop.
+func _on_look_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		look_dragged.emit(event.relative)
+		return
+	if event is InputEventScreenDrag:
+		look_dragged.emit(event.relative)
+
+
 func _process(delta: float) -> void:
 	if _toast_seconds <= 0.0:
 		return
@@ -417,6 +514,35 @@ func layout_for(viewport_size: Vector2) -> void:
 	action_button.custom_minimum_size = Vector2(action, action)
 	action_button.size = Vector2(action, action)
 	action_button.position = Vector2(viewport_size.x - action - right, viewport_size.y - action - bottom)
+
+	# Combat cluster: an arc of round buttons up and left of the context button.
+	var combat := clampf(shortest * 0.115, COMBAT_MIN, COMBAT_MAX)
+	# A two-column grid left of the context button. Cells are 1.22 button widths
+	# apart so no two circles touch, which the first arc layout got wrong.
+	var layout := [
+		{"action": "light", "x": -1.22, "y": -0.10},
+		{"action": "heavy", "x": -2.44, "y": -0.10},
+		{"action": "dodge", "x": -1.22, "y": -1.32},
+		{"action": "block", "x": -2.44, "y": -1.32},
+		{"action": "aim", "x": -1.22, "y": -2.54},
+		{"action": "lock", "x": -2.44, "y": -2.54},
+	]
+	var anchor := Vector2(viewport_size.x - action - right, viewport_size.y - action - bottom)
+	for item in layout:
+		var button: Button = combat_buttons.get(item["action"])
+		if button == null:
+			continue
+		button.custom_minimum_size = Vector2(combat, combat)
+		button.size = Vector2(combat, combat)
+		var pos := anchor + Vector2(float(item["x"]) * combat, float(item["y"]) * combat)
+		button.position = Vector2(clampf(pos.x, left, viewport_size.x - combat - right), clampf(pos.y, top + PAUSE_SIZE + 8.0, viewport_size.y - combat - bottom))
+
+	# The camera surface covers everything to the right of the movement pad and
+	# below the top panel, but no buttons: Godot routes a press to the topmost
+	# control, so the buttons win over the surface.
+	if look_area != null:
+		look_area.position = Vector2(viewport_size.x * 0.42, top + PAUSE_SIZE + 8.0)
+		look_area.size = Vector2(viewport_size.x * 0.58 - right, viewport_size.y - look_area.position.y - bottom)
 
 	var interact_width := clampf(action * 1.25, 132.0, 176.0)
 	interact_button.custom_minimum_size = Vector2(interact_width, INTERACT_HEIGHT)

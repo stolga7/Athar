@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "phase": "phase-4/major-game-overhaul",
+  "notes": "Every 3D asset ATHAR imports is recorded here with its source, creator and license. A model that is not in this file is not allowed in the game. All imports are glTF binary (.glb) so Godot loads them without an extra importer plugin. Source pages were checked by hand: each lists CC0 (public domain dedication), which permits commercial use, modification, redistribution and use without attribution. Attribution is still given below as a courtesy.",
+  "assets": [
+    {
+      "id": "hunter",
+      "name": "Adventurer",
+      "file": "res://assets/models/characters/adventurer.glb",
+      "source_url": "https://poly.pizza/m/5EGWBMpuXq",
+      "publisher": "Poly Pizza",
+      "creator": "Quaternius",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "modification_allowed": true,
+      "redistribution_allowed": true,
+      "commercial_use_allowed": true,
+      "attribution": "Adventurer by Quaternius (CC0 1.0), via Poly Pizza",
+      "attribution_required": false,
+      "used_for": "The hunter the player controls.",
+      "modifications": [
+        "Scaled from the source armature units to 1.80 m and put feet-on-origin by scripts/visuals/model_asset.gd.",
+        "Rotated 180 degrees so the model faces -Z, ATHAR's forward direction.",
+        "Materials recoloured to the hunter palette (leather, cloth, hide) at runtime by ModelAsset.recolour.",
+        "Shadow casting disabled on small mesh parts for mobile cost.",
+        "Bow and quiver props built procedurally and attached to hand/back bones with BoneAttachment3D.",
+        "Animations remapped from the 'CharacterArmature|' prefixed clip names to short names by the loader."
+      ],
+      "skeleton_bones": 62,
+      "animation_clips": 24,
+      "clips_used": {
+        "idle": "Idle",
+        "walk": "Walk",
+        "run": "Run",
+        "roll": "Roll",
+        "light_attack": "Sword_Slash",
+        "heavy_attack": "Punch_Right",
+        "hit_reaction": "HitRecieve",
+        "death": "Death",
+        "aim": "Idle_Gun_Pointing",
+        "block": "Idle_Sword",
+        "interact": "Interact"
+      },
+      "approximations": [
+        "'Sword_Slash' is the asset's only melee swing and is used for the light attack.",
+        "'Punch_Right' is used as the heavy attack because the rig has no two-handed heavy swing.",
+        "'Idle_Gun_Pointing' is used for the aim stance; the rig has no bow draw clip.",
+        "'Idle_Sword' is used as the raised guard because the rig has no dedicated block clip."
+      ]
+    },
+    {
+      "id": "deer",
+      "name": "Stag",
+      "file": "res://assets/models/animals/stag.glb",
+      "source_url": "https://poly.pizza/m/tQdzbZ1Cmw",
+      "publisher": "Poly Pizza",
+      "creator": "Quaternius",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "modification_allowed": true,
+      "redistribution_allowed": true,
+      "commercial_use_allowed": true,
+      "attribution": "Stag by Quaternius (CC0 1.0), via Poly Pizza",
+      "attribution_required": false,
+      "used_for": "The deer the player hunts. This is the template for every future wildlife species.",
+      "modifications": [
+        "Scaled to 1.55 m at the shoulder line and put hooves-on-origin by scripts/visuals/model_asset.gd.",
+        "Rotated 180 degrees so the animal faces -Z.",
+        "Coat recoloured at runtime to a wild stag brown by ModelAsset.recolour.",
+        "Shadow casting disabled on small mesh parts for mobile cost.",
+        "Animations remapped from the 'Armature|' prefixed clip names to short names by the loader."
+      ],
+      "skeleton_bones": 38,
+      "animation_clips": 14,
+      "clips_used": {
+        "graze": "Eating",
+        "idle": "Idle",
+        "alert": "Idle_2",
+        "rest": "Idle_Headlow",
+        "walk": "Walk",
+        "gallop": "Gallop",
+        "death": "Death",
+        "hit_reaction": "Idle_HitReact_Left",
+        "kick": "Attack_Kick"
+      },
+      "approximations": [
+        "The rig has no separate turn, flee or rest clip; turning is done by steering the body and fleeing uses Gallop.",
+        "'Idle_Headlow' doubles as the resting/idle pose because the rig has no lying-down clip.",
+        "'Attack_Kick' is unused in play but retained for the future wildlife behaviour hook."
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "id": "chibi_probe",
+      "name": "Matt (chibi test figure)",
+      "source_url": "https://poly.pizza/",
+      "reason": "Downloaded only to prove the GLB import path worked. Not a hunter silhouette, so never shipped; the file was deleted before the phase commit."
+    }
+  ],
+  "environment": {
+    "note": "Trees, rocks, ground and ruin are built procedurally from Godot primitives and vertex colours in scripts/visuals/forest.gd, wilds_ground.gd and wilds_environment.gd. They are original work created for this repository, not imported assets, so no third-party license applies to them.",
+    "textures": []
+  },
+  "audio": {
+    "note": "All audio is synthesised at runtime by scripts/audio/audio_director.gd. No recorded samples ship with the game.",
+    "samples": []
+  }
+}

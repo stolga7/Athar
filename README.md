@@ -47,6 +47,14 @@ git-ignored.
 | Pause | `PAUSE` button in the top corner: resume, settings, restart, main menu | same button (mouse) |
 | Settings | Sound, graphics quality, language and stick sensitivity; saved between sessions | same screen (mouse) |
 | Travel | Stand at a region's gate and press the `TRAVEL` context button, or open `المناطق` / `REGIONS` from the title or pause screen | same screens (mouse) |
+| Light attack | `STRIKE` (ضربة) button, bottom-right cluster | `J` or left mouse button |
+| Heavy attack | `HEAVY` (ثقيلة) button | `K` |
+| Dodge | `DODGE` (تفادٍ) button | `Space` |
+| Block | `BLOCK` (صدّ) button, held | `L`, held |
+| Aim | `AIM` (تصويب) button | `Q` |
+| Lock-on | `LOCK` (تثبيت) button; toggles the nearest target | `Tab` |
+| Camera | Drag anywhere on the right half of the screen; pinch to zoom | Drag with the mouse, wheel to zoom |
+| Training round | Stand beside the training target and attack it; it recovers on its own | same |
 
 The interface is Arabic by default and fully right to left; English is one tap
 away in Settings and the whole HUD mirrors immediately. Every visible string
@@ -233,12 +241,53 @@ README_AR.md                 Arabic project notes
   reach are the Phase 3.2 values. A region may choose its deer's temperament and
   a habitat distance band, and the band is clamped to the tuned 16 m floor.
 
+
+### Models, third-person combat and mobile controls (Phase 4)
+
+- The hunter and the deer are real skinned models now, not shapes built in code:
+  Quaternius' "Adventurer" (62 bones, 24 clips) and "Stag" (38 bones, 14 clips),
+  both CC0. Source URLs, creator, license and every modification are recorded in
+  [`assets/models/ASSET_MANIFEST.json`](assets/models/ASSET_MANIFEST.json) and
+  [`assets/models/CREDITS.md`](assets/models/CREDITS.md), and a test fails if a
+  model ships without that record. The loader (`scripts/visuals/model_asset.gd`)
+  normalises a model to a real height, puts its feet on the origin, turns it to
+  face forward and reports a missing or broken file instead of crashing.
+- Animation is driven by an `AnimationTree` state machine in each rig, with
+  cross-fades between states and one-shot clips for actions. Locomotion picks
+  idle, walk or run from actual speed and scales playback with it, so the feet
+  stop sliding; the deer has grazing, alert, walk, gallop and rest states. Each
+  rig exposes `play_action`, `play_death` and `revive`, and a missing clip is
+  skipped rather than fatal.
+- The camera is a spring-follow third-person rig: it lags behind the hunter,
+  orbits with a yaw/pitch offset that recentres while walking, can zoom between
+  3.2 m and 9 m, probes for trunks and ground so it never clips through them, and
+  pulls in when lock-on is engaged. It ignores the hunter's own body.
+- Combat is a small state machine (`scripts/gameplay/combat_controller.gd`) with
+  light and heavy attacks (windup, active window, recovery), a dodge with an
+  invulnerability window, a held block that soaks 80% of damage and drains
+  stamina, hit-stun, death and revive. One stamina pool pays for walking,
+  attacking, dodging and blocking, and the HUD greys out what you cannot afford.
+  There is no gore and no enemy AI: a straw training target proves hit detection,
+  damage, knock-down and recovery.
+- Mobile controls are real children of the HUD: a stick, sprint-aware movement,
+  six combat buttons in a non-overlapping grid, a camera drag area on the right
+  half of the screen, context buttons and a toast line. The layout is rebuilt for
+  the actual viewport with safe-area insets, and the suite checks every button
+  stays on screen and apart at 1280×720, 960×540, 720×1280 and 1600×900.
+- The environment got material and colour work rather than new geometry: crown
+  palettes were more than doubled in brightness so a tree reads as a lit tree
+  instead of a black blob, and the grass tufts follow. Trees, rocks, ground and
+  ruins remain original procedural geometry instanced into a handful of
+  draw calls — see the limitation below.
+
 ## Known limitations
 
 These are known and intentionally **not** changed in this baseline phase:
 
-- All visuals are Godot primitives, not final art: trees, ground and lighting
-  are generated in code with no textures or models on disk.
+- The environment is still procedural geometry, not final art: trees, rocks,
+  ground and ruins are generated in code and vertex-coloured, with no textures or
+  imported environment models on disk. Only the hunter and the deer are imported
+  assets. It reads as a stylised low-poly forest, not a photoreal one.
 - One scene and one script; no separate actor/UI scenes and no autoloads.
 - The audio is synthesised, not recorded: `tools/generate_audio.py` produces
   every WAV from sine waves and filtered noise, so there is nothing to license
@@ -250,19 +299,23 @@ These are known and intentionally **not** changed in this baseline phase:
   an owner's ear on a phone.
 - The only interactive sound the world offers is the hunt itself; there is no
   menu music or stingers because there is no menu beyond the audio panel.
-- HUD text is English only; no Arabic font or right-to-left layout yet.
 - No `export_presets.cfg` and no Android build template, so the project cannot
   be exported to an APK as-is. Signing credentials are not part of this repo.
 - No save system, pause menu or localized strings. Settings exist only for audio
   (`user://audio_settings.cfg`); nothing else is persisted.
 - World layout uses a random generator; pass `--seed=<int>` (or set `ATHAR_SEED`)
   to reproduce a layout, otherwise each run differs. See `TESTING.md`.
-- The hunter and deer are assembled from primitives by code. Their proportions
-  are asserted numerically by the test suite, and the environment is checked by
-  the visual test suite, but **neither can confirm a scene looks good**.
-  Screenshots in `docs/screenshots/phase-3.1/` were rendered from the real scene
-  with software Vulkan (Mesa lavapipe) on a Linux VM; they are evidence of what
-  the code draws, not a substitute for playing it.
+- Some animation is approximated because the CC0 rigs do not carry every clip a
+  AAA hunter would: the heavy attack uses the rig's punch, aiming uses its
+  gun-pointing idle, blocking uses its sword idle and the deer has no turn or
+  lying-down clip. The exact mapping is in the asset manifest.
+- Combat is proven against one training target, not against enemies: there is no
+  enemy AI, no bow projectile and no damage numbers. The aim stance exists, but
+  the bow is a prop and does not fire yet.
+- Screenshots in `docs/screenshots/phase-4/` were rendered from the real scene
+  with software OpenGL (Mesa llvmpipe) on a Linux VM under Xvfb; they are
+  evidence of what the code draws from several angles, but not a substitute for
+  playing it on a phone.
 - The deer does not drink: the world has no water body, and adding one is out of
   scope for this phase. `DRINKING` is therefore not implemented rather than
   simulated.
@@ -274,10 +327,10 @@ These are known and intentionally **not** changed in this baseline phase:
 - A region's wildlife is the same single deer species in a different habitat:
   the temperament and the spacing change, not the animal. New species and the
   creatures/bosses the definitions reserve hooks for are later phases.
-- No Phase 3.6 screenshots exist: this environment has no display server, no
-  root to install one, and no software Vulkan driver, so the renderer cannot be
-  started. The region suites verify geometry, budgets and transitions; they do
-  not prove the ten regions look distinct. That check needs a real screen.
+- Phase 4 has real screenshots (see above). Phase 3.6 still has none: that work
+  was verified by geometry, budgets and transition tests, not by looking at the
+  ten regions. A display server is available now, so a region screenshot pass is
+  possible and simply has not been done.
 - No Android device or emulator test has been run. Touch feel, on-device
   framerate and colour reproduction on a phone screen are unverified, and the
   draw-call/triangle counts in `TESTING.md` come from a software rasteriser, so
@@ -292,20 +345,23 @@ These are known and intentionally **not** changed in this baseline phase:
 Runs the headless checks — engine version, project import, GDScript parsing,
 startup, repository integrity, seed determinism, the hunting suite, the
 camera/visual suite, the wildlife AI suite, the living world suite, the audio
-suite, the interface suite and the world region suite — and exits non-zero if any
-of them fail. The hunting suite runs 66 checks, the visual suite 53, the wildlife
-suite 100, the living world suite 95, the audio suite 86, the interface suite 217
-and the region suite 398; the script itself reports 177 checks, including every
-suite's verdict. Full details in
-[TESTING.md](TESTING.md).
+suite, the interface suite, the world region suite and the Phase 4 combat and
+model suite — and exits non-zero if any of them fail. The hunting suite runs 78
+checks, the visual suite 53, the wildlife suite 100, the living world suite 95,
+the audio suite 86, the interface suite 217, the region suite 398 and the combat
+and model suite 138; the script itself reports 208 checks, including every
+suite's verdict. Full details in [TESTING.md](TESTING.md).
 
 Rendered screenshots are in [docs/screenshots](docs/screenshots/): the world
 views of Phase 3.1 (spawn, deer at close range, chase, camera pinned against a
-trunk, horizon) in `phase-3.1/`, the deer's behaviour states in `phase-3.2/`, and
-the living world of Phase 3.3 (day, sunset, night, rain, fog) in `phase-3.3/`.
-They can be regenerated on any machine with a display using
-`scripts/tools/capture_shots.gd`, `behaviour_shots.gd` and `world_shots.gd`; see
-section 7 of [TESTING.md](TESTING.md).
+trunk, horizon) in `phase-3.1/`, the deer's behaviour states in `phase-3.2/`, the
+living world of Phase 3.3 (day, sunset, night, rain, fog) in `phase-3.3/`, and
+the Phase 4 set in `phase-4/`: the hunter from the front, side and in a run, an
+attack and a block, the deer grazing, alert and galloping, the training target
+fight, the mobile combat layout and a forest view. They can be regenerated on any
+machine with a display using `scripts/tools/capture_shots.gd`,
+`behaviour_shots.gd`, `world_shots.gd`, `phase4_shots.gd` and
+`model_preview.gd`; see section 7 of [TESTING.md](TESTING.md).
 
 ## License
 

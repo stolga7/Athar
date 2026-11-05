@@ -630,7 +630,8 @@ func _test_scene() -> void:
 	_check(_main.deer.visible and _main.deer_state == "GRAZING", "the fresh hunt has a deer to track")
 
 	# Vitals and the information line follow the world.
-	_main.stamina = 42.0
+	# Stamina is the combat pool, so that is what the bar draws.
+	_main.combat.stamina = 42.0
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check(absf(_main.hud.stamina_bar.value - 0.42) < 0.02, "the stamina bar follows the hunter",
